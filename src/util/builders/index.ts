@@ -1,5 +1,5 @@
-export { generateSchemaData as generateMySQL } from './mysql';
-export { generateSchemaData as generatePG } from './pg';
-export { generateSchemaData as generateSQLite } from './sqlite';
+export { generateSchemaData as generateMySQL } from './mysql.ts';
+export { generateSchemaData as generatePG } from './pg.ts';
+export { generateSchemaData as generateSQLite } from './sqlite.ts';
 
-export * from './types';
+export * from './types.ts';
