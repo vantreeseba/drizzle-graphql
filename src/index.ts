@@ -9,18 +9,9 @@ import {
   GraphQLSchema,
   type GraphQLSchemaConfig,
 } from 'graphql';
-// @ts-expect-error
 import type { ObjMap } from 'graphql/jsutils/ObjMap';
-import type {
-  AnyDrizzleDB,
-  BuildSchemaConfig,
-  GeneratedData,
-} from './types.ts';
-import {
-  generateMySQL,
-  generatePG,
-  generateSQLite,
-} from './util/builders/index.ts';
+import type { AnyDrizzleDB, BuildSchemaConfig, GeneratedData } from './types.ts';
+import { generateMySQL, generatePG, generateSQLite } from './util/builders/index.ts';
 
 export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
   db: TDbClient,
@@ -65,40 +56,17 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
 
   let generatorOutput;
   if (is(db, MySqlDatabase)) {
-    generatorOutput = generateMySQL(
-      db,
-      schema,
-      config?.relationsDepthLimit,
-      prefixes,
-      suffixes,
-    );
+    generatorOutput = generateMySQL(db, schema, config?.relationsDepthLimit, prefixes, suffixes);
   } else if (is(db, PgAsyncDatabase)) {
-    generatorOutput = generatePG(
-      db,
-      schema,
-      relations,
-      config?.relationsDepthLimit,
-      prefixes,
-      suffixes,
-    );
+    generatorOutput = generatePG(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
   } else if (is(db, BaseSQLiteDatabase)) {
-    generatorOutput = generateSQLite(
-      db,
-      schema,
-      config?.relationsDepthLimit,
-      prefixes,
-      suffixes,
-    );
-  } else
-    throw new Error('Drizzle-GraphQL Error: Unknown database instance type');
+    generatorOutput = generateSQLite(db, schema, config?.relationsDepthLimit, prefixes, suffixes);
+  } else throw new Error('Drizzle-GraphQL Error: Unknown database instance type');
 
   const { queries, mutations, inputs, types } = generatorOutput;
 
   const graphQLSchemaConfig: GraphQLSchemaConfig = {
-    types: [...Object.values(inputs), ...Object.values(types)] as (
-      | GraphQLInputObjectType
-      | GraphQLObjectType
-    )[],
+    types: [...Object.values(inputs), ...Object.values(types)] as (GraphQLInputObjectType | GraphQLObjectType)[],
     query: new GraphQLObjectType({
       name: 'Query',
       fields: queries as ObjMap<GraphQLFieldConfig<any, any, any>>,
