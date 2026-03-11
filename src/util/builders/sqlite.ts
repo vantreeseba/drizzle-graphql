@@ -1,21 +1,8 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import {
-  is,
-  type Relation,
-  type Table,
-} from 'drizzle-orm';
+import { is, type Relation, type Table } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
-import {
-  type BaseSQLiteDatabase,
-  type SQLiteColumn,
-  SQLiteTable,
-} from 'drizzle-orm/sqlite-core';
-import type {
-  GraphQLFieldConfig,
-  GraphQLFieldConfigArgumentMap,
-  GraphQLResolveInfo,
-  ThunkObjMap,
-} from 'graphql';
+import { type BaseSQLiteDatabase, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, GraphQLResolveInfo, ThunkObjMap } from 'graphql';
 import {
   GraphQLError,
   type GraphQLInputObjectType,
@@ -27,11 +14,7 @@ import {
 import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
-import type {
-  BuildSchemaConfig,
-  GeneratedEntities,
-  MakeRequired,
-} from '../../types.ts';
+import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
   extractFilters,
   extractOrderBy,
@@ -48,12 +31,7 @@ import {
   remapToGraphQLArrayOutput,
   remapToGraphQLSingleOutput,
 } from '../data-mappers/index.ts';
-import type {
-  CreatedResolver,
-  Filters,
-  TableNamedRelations,
-  TableSelectArgs,
-} from './types.ts';
+import type { CreatedResolver, Filters, TableNamedRelations, TableSelectArgs } from './types.ts';
 
 const generateSelectArray = (
   db: BaseSQLiteDatabase<any, any, any, any>,
@@ -62,7 +40,7 @@ const generateSelectArray = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  listSuffix: string,
+  _listSuffix: string,
 ): CreatedResolver => {
   const queryName = `${uncapitalize(tableName)}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
@@ -94,12 +72,7 @@ const generateSelectArray = (
 
   return {
     name: queryName,
-    resolver: async (
-      source: any,
-      args: Partial<TableSelectArgs>,
-      context: any,
-      info: GraphQLResolveInfo,
-    ) => {
+    resolver: async (_source: any, args: Partial<TableSelectArgs>, _context: any, info: GraphQLResolveInfo) => {
       try {
         const { offset, limit, orderBy, where } = args;
 
@@ -108,28 +81,15 @@ const generateSelectArray = (
         }) as ResolveTree;
 
         const query = queryBase.findMany({
-          columns: extractSelectedColumnsFromTree(
-            parsedInfo.fieldsByTypeName[typeName]!,
-            table,
-          ),
+          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
           offset,
           limit,
           // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
           // use it directly so column refs match the CTE alias.
-          orderBy: orderBy
-            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
-            : undefined,
-          where: where
-            ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) }
-            : undefined,
+          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
+          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(
-                relationMap,
-                tables,
-                tableName,
-                parsedInfo,
-                typeName,
-              )
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
             : undefined,
         });
 
@@ -155,7 +115,7 @@ const generateSelectSingle = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  singleSuffix: string,
+  _singleSuffix: string,
 ): CreatedResolver => {
   const queryName = `${uncapitalize(tableName)}Single`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
@@ -184,7 +144,7 @@ const generateSelectSingle = (
 
   return {
     name: queryName,
-    resolver: async (source, args: Partial<TableSelectArgs>, context, info) => {
+    resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
         const { offset, orderBy, where } = args;
 
@@ -193,39 +153,23 @@ const generateSelectSingle = (
         }) as ResolveTree;
 
         const query = queryBase.findFirst({
-          columns: extractSelectedColumnsFromTree(
-            parsedInfo.fieldsByTypeName[typeName]!,
-            table,
-          ),
+          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
           offset,
           // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
           // use it directly so column refs match the CTE alias.
-          orderBy: orderBy
-            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
-            : undefined,
-          where: where
-            ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) }
-            : undefined,
+          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
+          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(
-                relationMap,
-                tables,
-                tableName,
-                parsedInfo,
-                typeName,
-              )
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
             : undefined,
         });
 
         const result = await query;
-        if (!result) return undefined;
+        if (!result) {
+          return undefined;
+        }
 
-        return remapToGraphQLSingleOutput(
-          result,
-          tableName,
-          table,
-          relationMap,
-        );
+        return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError(e.message);
@@ -255,15 +199,12 @@ const generateInsertArray = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { values: Record<string, any>[] },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { values: Record<string, any>[] }, _context, info) => {
       try {
         const input = remapFromGraphQLArrayInput(args.values, table);
-        if (!input.length) throw new GraphQLError('No values were provided!');
+        if (!input.length) {
+          throw new GraphQLError('No values were provided!');
+        }
 
         const parsedInfo = parseResolveInfo(info, {
           deep: true,
@@ -274,11 +215,7 @@ const generateInsertArray = (
           table,
         );
 
-        const result = await db
-          .insert(table)
-          .values(input)
-          .returning(columns)
-          .onConflictDoNothing();
+        const result = await db.insert(table).values(input).returning(columns).onConflictDoNothing();
 
         return remapToGraphQLArrayOutput(result, tableName, table);
       } catch (e) {
@@ -310,12 +247,7 @@ const generateInsertSingle = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { values: Record<string, any> },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { values: Record<string, any> }, _context, info) => {
       try {
         const input = remapFromGraphQLSingleInput(args.values, table);
 
@@ -327,13 +259,11 @@ const generateInsertSingle = (
           parsedInfo.fieldsByTypeName[typeName]!,
           table,
         );
-        const result = await db
-          .insert(table)
-          .values(input)
-          .returning(columns)
-          .onConflictDoNothing();
+        const result = await db.insert(table).values(input).returning(columns).onConflictDoNothing();
 
-        if (!result[0]) return undefined;
+        if (!result[0]) {
+          return undefined;
+        }
 
         return remapToGraphQLSingleOutput(result[0], tableName, table);
       } catch (e) {
@@ -369,12 +299,7 @@ const generateUpdate = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { where?: Filters<Table>; set: Record<string, any> },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { where?: Filters<Table>; set: Record<string, any> }, _context, info) => {
       try {
         const { where, set } = args;
 
@@ -388,8 +313,9 @@ const generateUpdate = (
         );
 
         const input = remapFromGraphQLSingleInput(set, table);
-        if (!Object.keys(input).length)
+        if (!Object.keys(input).length) {
           throw new GraphQLError('Unable to update with no values specified!');
+        }
 
         let query = db.update(table).set(input);
         if (where) {
@@ -431,12 +357,7 @@ const generateDelete = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { where?: Filters<Table> },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { where?: Filters<Table> }, _context, info) => {
       try {
         const { where } = args;
 
@@ -494,7 +415,9 @@ const buildNamedRelations = (
   const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
 
   for (const [relTableName, relConfig] of Object.entries(relations)) {
-    if (!relConfig?.relations) continue;
+    if (!relConfig?.relations) {
+      continue;
+    }
 
     const namedConfig: Record<string, TableNamedRelations> = {};
 
@@ -516,7 +439,9 @@ const buildNamedRelations = (
         targetTableName = targetEntry?.[0];
       }
 
-      if (!targetTableName) continue;
+      if (!targetTableName) {
+        continue;
+      }
 
       namedConfig[innerRelName] = {
         relation: innerRelValue,
@@ -540,19 +465,14 @@ export const generateSchemaData = <
   schema: TSchema,
   relations: TablesRelationalConfig,
   relationsDepthLimit: number | undefined,
-  prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
+  _prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
 
-  const tableEntries = schemaEntries.filter(([key, value]) =>
-    is(value, SQLiteTable),
-  ) as [string, SQLiteTable][];
-  const tables = Object.fromEntries(tableEntries) as Record<
-    string,
-    SQLiteTable
-  >;
+  const tableEntries = schemaEntries.filter(([_key, value]) => is(value, SQLiteTable)) as [string, SQLiteTable][];
+  const tables = Object.fromEntries(tableEntries) as Record<string, SQLiteTable>;
 
   if (!tableEntries.length) {
     throw new Error(
@@ -574,16 +494,9 @@ export const generateSchemaData = <
   const queries: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
   const mutations: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
   const gqlSchemaTypes = Object.fromEntries(
-    Object.entries(tables).map(([tableName, table]) => [
+    Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(
-        tableName,
-        tables,
-        namedRelations,
-        true,
-        relationsDepthLimit,
-        cacheCtx,
-      ),
+      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx),
     ]),
   );
 
@@ -591,14 +504,8 @@ export const generateSchemaData = <
   const outputs: Record<string, GraphQLObjectType> = {};
 
   for (const [tableName, tableTypes] of Object.entries(gqlSchemaTypes)) {
-    const { insertInput, updateInput, tableFilters, tableOrder } =
-      tableTypes.inputs;
-    const {
-      selectSingleOutput,
-      selectArrOutput,
-      singleTableItemOutput,
-      arrTableItemOutput,
-    } = tableTypes.outputs;
+    const { insertInput, updateInput, tableFilters, tableOrder } = tableTypes.inputs;
+    const { selectSingleOutput, selectArrOutput, singleTableItemOutput, arrTableItemOutput } = tableTypes.outputs;
 
     const selectArrGenerated = generateSelectArray(
       db,
@@ -618,31 +525,10 @@ export const generateSchemaData = <
       tableFilters,
       suffixes.single,
     );
-    const insertArrGenerated = generateInsertArray(
-      db,
-      tableName,
-      schema[tableName] as SQLiteTable,
-      insertInput,
-    );
-    const insertSingleGenerated = generateInsertSingle(
-      db,
-      tableName,
-      schema[tableName] as SQLiteTable,
-      insertInput,
-    );
-    const updateGenerated = generateUpdate(
-      db,
-      tableName,
-      schema[tableName] as SQLiteTable,
-      updateInput,
-      tableFilters,
-    );
-    const deleteGenerated = generateDelete(
-      db,
-      tableName,
-      schema[tableName] as SQLiteTable,
-      tableFilters,
-    );
+    const insertArrGenerated = generateInsertArray(db, tableName, schema[tableName] as SQLiteTable, insertInput);
+    const insertSingleGenerated = generateInsertSingle(db, tableName, schema[tableName] as SQLiteTable, insertInput);
+    const updateGenerated = generateUpdate(db, tableName, schema[tableName] as SQLiteTable, updateInput, tableFilters);
+    const deleteGenerated = generateDelete(db, tableName, schema[tableName] as SQLiteTable, tableFilters);
 
     queries[selectArrGenerated.name] = {
       type: selectArrOutput,
@@ -674,9 +560,9 @@ export const generateSchemaData = <
       args: deleteGenerated.args,
       resolve: deleteGenerated.resolver,
     };
-    [insertInput, updateInput, tableFilters, tableOrder].forEach(
-      (e) => { inputs[e.name] = e; },
-    );
+    [insertInput, updateInput, tableFilters, tableOrder].forEach((e) => {
+      inputs[e.name] = e;
+    });
     outputs[selectSingleOutput.name] = selectSingleOutput;
     outputs[singleTableItemOutput.name] = singleTableItemOutput;
   }

@@ -42,6 +42,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
 ): GeneratedData<TDbClient> => {
   const schema = db._.fullSchema;
   const relations = db._.relations;
+
   if (!schema) {
     throw new Error(
       "Drizzle-GraphQL Error: Schema not found in drizzle instance. Make sure you're using drizzle-orm v0.30.9 or above and schema is passed to drizzle constructor!",
@@ -81,10 +82,20 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
   if (is(db, MySqlDatabase)) {
     generatorOutput = generateMySQL(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
   } else if (is(db, PgAsyncDatabase)) {
-    generatorOutput = generatePG(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes, config?.conflictDoNothing ?? false);
+    generatorOutput = generatePG(
+      db,
+      schema,
+      relations,
+      config?.relationsDepthLimit,
+      prefixes,
+      suffixes,
+      config?.conflictDoNothing ?? false,
+    );
   } else if (is(db, BaseSQLiteDatabase)) {
     generatorOutput = generateSQLite(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
-  } else throw new Error('Drizzle-GraphQL Error: Unknown database instance type');
+  } else {
+    throw new Error('Drizzle-GraphQL Error: Unknown database instance type');
+  }
 
   const { queries, mutations, inputs, types } = generatorOutput;
 

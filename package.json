@@ -89,11 +89,9 @@
     "url": "git+https://github.com/drizzle-team/drizzle-graphql.git"
   },
   "homepage": "https://orm.drizzle.team/docs/graphql",
-  "dependencies": {
-    "graphql-parse-resolve-info": "^4.13.0",
-    "graphql-scalars": "^1.25.0"
-  },
   "peerDependencies": {
+    "graphql-parse-resolve-info": "^4.13.0",
+    "graphql-scalars": "^1.25.0",
     "drizzle-orm": "~1.0.0-beta",
     "graphql": ">=16.3.0"
   }

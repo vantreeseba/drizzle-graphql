@@ -44,23 +44,30 @@ export const remapToGraphQLCore = (
     return value;
   }
 
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
 
-  if (value instanceof Buffer) return Array.from(value);
+  if (value instanceof Buffer) {
+    return Array.from(value);
+  }
 
-  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
 
   if (Array.isArray(value)) {
-    if (column.columnType === 'PgGeometry' || column.columnType === 'PgVector')
+    if (column.columnType === 'PgGeometry' || column.columnType === 'PgVector') {
       return value;
+    }
 
-    return value.map((arrVal) =>
-      remapToGraphQLCore(key, arrVal, tableName, column, relationMap),
-    );
+    return value.map((arrVal) => remapToGraphQLCore(key, arrVal, tableName, column, relationMap));
   }
 
   if (typeof value === 'object' && value !== null) {
-    if (column.columnType === 'PgGeometryObject') return value;
+    if (column.columnType === 'PgGeometryObject') {
+      return value;
+    }
 
     return JSON.stringify(value);
   }
@@ -83,23 +90,12 @@ export const remapToGraphQLSingleOutput = (
     const column = table[key as keyof Table] as Column | undefined;
 
     // SQLite blob(bigint) returns 0n for null DB values — treat as absent when nullable.
-    if (
-      value === 0n &&
-      column &&
-      (column as any).columnType === 'SQLiteBigInt' &&
-      !(column as any).notNull
-    ) {
+    if (value === 0n && column && (column as any).columnType === 'SQLiteBigInt' && !(column as any).notNull) {
       delete queryOutput[key];
       continue;
     }
 
-    queryOutput[key] = remapToGraphQLCore(
-      key,
-      value,
-      tableName,
-      column!,
-      relationMap,
-    );
+    queryOutput[key] = remapToGraphQLCore(key, value, tableName, column!, relationMap);
   }
 
   return queryOutput;
@@ -118,11 +114,7 @@ export const remapToGraphQLArrayOutput = (
   return queryOutput;
 };
 
-export const remapFromGraphQLCore = (
-  value: any,
-  column: Column,
-  columnName: string,
-) => {
+export const remapFromGraphQLCore = (value: any, column: Column, columnName: string) => {
   // drizzle-orm v1 uses compound dataType strings (e.g. "object date", "bigint int64").
   // We must check inclusion rather than equality to handle these cases.
   const dataType: string = (column as any).dataType ?? '';
@@ -141,24 +133,24 @@ export const remapFromGraphQLCore = (
     columnType === 'PgTimestampString';
   if (isTimestampColumn) {
     const formatted = new Date(value);
-    if (Number.isNaN(formatted.getTime()))
+    if (Number.isNaN(formatted.getTime())) {
       throw new GraphQLError(`Field '${columnName}' is not a valid date!`);
+    }
 
     return formatted;
   }
 
   // Date-only columns (no time component) — extract YYYY-MM-DD portion to avoid
   // timezone shifts when mysql2 formats Date objects using local time.
-  const isDateOnlyColumn =
-    columnType === 'MySqlDate' ||
-    columnType === 'PgDate';
+  const isDateOnlyColumn = columnType === 'MySqlDate' || columnType === 'PgDate';
   if (isDateOnlyColumn && typeof value === 'string') {
     // Accept ISO strings like "2024-04-04T00:00:00.000Z" or plain "2024-04-04"
     const dateOnly = value.includes('T') ? value.split('T')[0] : value;
     // Validate it's a real date by parsing
     const check = new Date(dateOnly!);
-    if (Number.isNaN(check.getTime()))
+    if (Number.isNaN(check.getTime())) {
       throw new GraphQLError(`Field '${columnName}' is not a valid date!`);
+    }
 
     return dateOnly;
   }
@@ -175,7 +167,9 @@ export const remapFromGraphQLCore = (
   // JSON columns (SQLite: "object json", PG: "json").
   // PgGeometryObject is already handled by the switch case below.
   if (dataType.includes('json') && (column as any).columnType !== 'PgGeometryObject') {
-    if (typeof value !== 'string') return value;
+    if (typeof value !== 'string') {
+      return value;
+    }
     try {
       return JSON.parse(value);
     } catch (e) {
@@ -188,8 +182,9 @@ export const remapFromGraphQLCore = (
   switch (dataType) {
     case 'date': {
       const formatted = new Date(value);
-      if (Number.isNaN(formatted.getTime()))
+      if (Number.isNaN(formatted.getTime())) {
         throw new GraphQLError(`Field '${columnName}' is not a valid date!`);
+      }
 
       return formatted;
     }
@@ -203,7 +198,9 @@ export const remapFromGraphQLCore = (
     }
 
     case 'json': {
-      if (column.columnType === 'PgGeometryObject') return value;
+      if (column.columnType === 'PgGeometryObject') {
+        return value;
+      }
 
       try {
         return JSON.parse(value);
@@ -231,7 +228,7 @@ export const remapFromGraphQLCore = (
     case 'bigint': {
       try {
         return BigInt(value);
-      } catch (error) {
+      } catch (_error) {
         throw new GraphQLError(`Field '${columnName}' is not a BigInt!`);
       }
     }
@@ -242,16 +239,15 @@ export const remapFromGraphQLCore = (
   }
 };
 
-export const remapFromGraphQLSingleInput = (
-  queryInput: Record<string, any>,
-  table: Table,
-) => {
+export const remapFromGraphQLSingleInput = (queryInput: Record<string, any>, table: Table) => {
   for (const [key, value] of Object.entries(queryInput)) {
     if (value === undefined) {
       delete queryInput[key];
     } else {
       const column = getTableColumns(table)[key];
-      if (!column) throw new GraphQLError(`Unknown column: ${key}`);
+      if (!column) {
+        throw new GraphQLError(`Unknown column: ${key}`);
+      }
 
       if (value === null && column.notNull) {
         delete queryInput[key];
@@ -265,11 +261,10 @@ export const remapFromGraphQLSingleInput = (
   return queryInput;
 };
 
-export const remapFromGraphQLArrayInput = (
-  queryInput: Record<string, any>[],
-  table: Table,
-) => {
-  for (const entry of queryInput) remapFromGraphQLSingleInput(entry, table);
+export const remapFromGraphQLArrayInput = (queryInput: Record<string, any>[], table: Table) => {
+  for (const entry of queryInput) {
+    remapFromGraphQLSingleInput(entry, table);
+  }
 
   return queryInput;
 };

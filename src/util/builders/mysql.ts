@@ -1,16 +1,8 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import {
-  is,
-  type Relation,
-  type Table,
-} from 'drizzle-orm';
+import { is, type Relation, type Table } from 'drizzle-orm';
 import { type MySqlDatabase, MySqlTable } from 'drizzle-orm/mysql-core';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
-import type {
-  GraphQLFieldConfig,
-  GraphQLFieldConfigArgumentMap,
-  ThunkObjMap,
-} from 'graphql';
+import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, ThunkObjMap } from 'graphql';
 import {
   GraphQLBoolean,
   GraphQLError,
@@ -23,11 +15,7 @@ import {
 import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
-import type {
-  BuildSchemaConfig,
-  GeneratedEntities,
-  MakeRequired,
-} from '../../types.ts';
+import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
   extractFilters,
   extractOrderBy,
@@ -43,12 +31,7 @@ import {
   remapToGraphQLArrayOutput,
   remapToGraphQLSingleOutput,
 } from '../data-mappers/index.ts';
-import type {
-  CreatedResolver,
-  Filters,
-  TableNamedRelations,
-  TableSelectArgs,
-} from './types.ts';
+import type { CreatedResolver, Filters, TableNamedRelations, TableSelectArgs } from './types.ts';
 
 const generateSelectArray = (
   db: MySqlDatabase<any, any, any>,
@@ -89,7 +72,7 @@ const generateSelectArray = (
 
   return {
     name: queryName,
-    resolver: async (source, args: Partial<TableSelectArgs>, context, info) => {
+    resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
         const { offset, limit, orderBy, where } = args;
 
@@ -98,28 +81,15 @@ const generateSelectArray = (
         }) as ResolveTree;
 
         const query = queryBase.findMany({
-          columns: extractSelectedColumnsFromTree(
-            parsedInfo.fieldsByTypeName[typeName]!,
-            table,
-          ),
+          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
           offset,
           limit,
           // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
           // use it directly so column refs match the CTE alias.
-          orderBy: orderBy
-            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
-            : undefined,
-          where: where
-            ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) }
-            : undefined,
+          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
+          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(
-                relationMap,
-                tables,
-                tableName,
-                parsedInfo,
-                typeName,
-              )
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
             : undefined,
         });
 
@@ -174,7 +144,7 @@ const generateSelectSingle = (
 
   return {
     name: queryName,
-    resolver: async (source, args: Partial<TableSelectArgs>, context, info) => {
+    resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
         const { offset, orderBy, where } = args;
 
@@ -183,39 +153,23 @@ const generateSelectSingle = (
         }) as ResolveTree;
 
         const query = queryBase.findFirst({
-          columns: extractSelectedColumnsFromTree(
-            parsedInfo.fieldsByTypeName[typeName]!,
-            table,
-          ),
+          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
           offset,
           // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
           // use it directly so column refs match the CTE alias.
-          orderBy: orderBy
-            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
-            : undefined,
-          where: where
-            ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) }
-            : undefined,
+          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
+          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(
-                relationMap,
-                tables,
-                tableName,
-                parsedInfo,
-                typeName,
-              )
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
             : undefined,
         });
 
         const result = await query;
-        if (!result) return undefined;
+        if (!result) {
+          return undefined;
+        }
 
-        return remapToGraphQLSingleOutput(
-          result,
-          tableName,
-          table,
-          relationMap,
-        );
+        return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError((e as any).message);
@@ -244,15 +198,12 @@ const generateInsertArray = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { values: Record<string, any>[] },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { values: Record<string, any>[] }, _context, _info) => {
       try {
         const input = remapFromGraphQLArrayInput(args.values, table);
-        if (!input.length) throw new GraphQLError('No values were provided!');
+        if (!input.length) {
+          throw new GraphQLError('No values were provided!');
+        }
 
         await db.insert(table).values(input);
 
@@ -285,12 +236,7 @@ const generateInsertSingle = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { values: Record<string, any> },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { values: Record<string, any> }, _context, _info) => {
       try {
         const input = remapFromGraphQLSingleInput(args.values, table);
 
@@ -329,18 +275,14 @@ const generateUpdate = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { where?: Filters<Table>; set: Record<string, any> },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { where?: Filters<Table>; set: Record<string, any> }, _context, _info) => {
       try {
         const { where, set } = args;
 
         const input = remapFromGraphQLSingleInput(set, table);
-        if (!Object.keys(input).length)
+        if (!Object.keys(input).length) {
           throw new GraphQLError('Unable to update with no values specified!');
+        }
 
         let query = db.update(table).set(input);
         if (where) {
@@ -379,12 +321,7 @@ const generateDelete = (
 
   return {
     name: queryName,
-    resolver: async (
-      source,
-      args: { where?: Filters<Table> },
-      context,
-      info,
-    ) => {
+    resolver: async (_source, args: { where?: Filters<Table> }, _context, _info) => {
       try {
         const { where } = args;
 
@@ -431,7 +368,9 @@ const buildNamedRelations = (
   const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
 
   for (const [relTableName, relConfig] of Object.entries(relations)) {
-    if (!relConfig?.relations) continue;
+    if (!relConfig?.relations) {
+      continue;
+    }
 
     const namedConfig: Record<string, TableNamedRelations> = {};
 
@@ -453,7 +392,9 @@ const buildNamedRelations = (
         targetTableName = targetEntry?.[0];
       }
 
-      if (!targetTableName) continue;
+      if (!targetTableName) {
+        continue;
+      }
 
       namedConfig[innerRelName] = {
         relation: innerRelValue,
@@ -477,15 +418,13 @@ export const generateSchemaData = <
   schema: TSchema,
   relations: TablesRelationalConfig,
   relationsDepthLimit: number | undefined,
-  prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
+  _prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
 
-  const tableEntries = schemaEntries.filter(([key, value]) =>
-    is(value, MySqlTable),
-  ) as [string, MySqlTable][];
+  const tableEntries = schemaEntries.filter(([_key, value]) => is(value, MySqlTable)) as [string, MySqlTable][];
   const tables = Object.fromEntries(tableEntries);
 
   if (!tableEntries.length) {
@@ -508,16 +447,9 @@ export const generateSchemaData = <
   const queries: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
   const mutations: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
   const gqlSchemaTypes = Object.fromEntries(
-    Object.entries(tables).map(([tableName, table]) => [
+    Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(
-        tableName,
-        tables,
-        namedRelations,
-        false,
-        relationsDepthLimit,
-        cacheCtx,
-      ),
+      generateTableTypes(tableName, tables, namedRelations, false, relationsDepthLimit, cacheCtx),
     ]),
   );
 
@@ -536,8 +468,7 @@ export const generateSchemaData = <
   };
 
   for (const [tableName, tableTypes] of Object.entries(gqlSchemaTypes)) {
-    const { insertInput, updateInput, tableFilters, tableOrder } =
-      tableTypes.inputs;
+    const { insertInput, updateInput, tableFilters, tableOrder } = tableTypes.inputs;
     const { selectSingleOutput, selectArrOutput } = tableTypes.outputs;
 
     const selectArrGenerated = generateSelectArray(
@@ -558,31 +489,10 @@ export const generateSchemaData = <
       tableFilters,
       suffixes.single,
     );
-    const insertArrGenerated = generateInsertArray(
-      db,
-      tableName,
-      schema[tableName] as MySqlTable,
-      insertInput,
-    );
-    const insertSingleGenerated = generateInsertSingle(
-      db,
-      tableName,
-      schema[tableName] as MySqlTable,
-      insertInput,
-    );
-    const updateGenerated = generateUpdate(
-      db,
-      tableName,
-      schema[tableName] as MySqlTable,
-      updateInput,
-      tableFilters,
-    );
-    const deleteGenerated = generateDelete(
-      db,
-      tableName,
-      schema[tableName] as MySqlTable,
-      tableFilters,
-    );
+    const insertArrGenerated = generateInsertArray(db, tableName, schema[tableName] as MySqlTable, insertInput);
+    const insertSingleGenerated = generateInsertSingle(db, tableName, schema[tableName] as MySqlTable, insertInput);
+    const updateGenerated = generateUpdate(db, tableName, schema[tableName] as MySqlTable, updateInput, tableFilters);
+    const deleteGenerated = generateDelete(db, tableName, schema[tableName] as MySqlTable, tableFilters);
 
     queries[selectArrGenerated.name] = {
       type: selectArrOutput,
@@ -614,9 +524,9 @@ export const generateSchemaData = <
       args: deleteGenerated.args,
       resolve: deleteGenerated.resolver,
     };
-    [insertInput, updateInput, tableFilters, tableOrder].forEach(
-      (e) => { inputs[e.name] = e; },
-    );
+    [insertInput, updateInput, tableFilters, tableOrder].forEach((e) => {
+      inputs[e.name] = e;
+    });
     outputs[selectSingleOutput.name] = selectSingleOutput;
   }
 

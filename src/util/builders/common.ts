@@ -50,7 +50,7 @@ import {
   GraphQLString,
 } from 'graphql';
 import type { ResolveTree } from 'graphql-parse-resolve-info';
-import { capitalize, tableNameToModel } from '../case-ops/index.ts';
+import { capitalize } from '../case-ops/index.ts';
 import { remapFromGraphQLCore } from '../data-mappers/index.ts';
 import { drizzleColumnToGraphQLType, drizzleRelationToGraphQLInsertType } from '../type-converter/index.ts';
 import type {
@@ -101,8 +101,10 @@ export const extractSelectedColumnsFromTree = (
   const treeEntries = Object.entries(tree);
   const selectedColumns: SelectedColumnsRaw = [];
 
-  for (const [fieldName, fieldData] of treeEntries) {
-    if (!tableColumns[fieldData.name]) continue;
+  for (const [_fieldName, fieldData] of treeEntries) {
+    if (!tableColumns[fieldData.name]) {
+      continue;
+    }
 
     selectedColumns.push([fieldData.name, true]);
   }
@@ -110,9 +112,7 @@ export const extractSelectedColumnsFromTree = (
   if (!selectedColumns.length) {
     const columnKeys = Object.entries(tableColumns);
     const columnName =
-      columnKeys.find((e) =>
-        rqbCrashTypes.find((haram) => e[1].columnType !== haram),
-      )?.[0] ?? columnKeys[0]![0];
+      columnKeys.find((e) => rqbCrashTypes.find((haram) => e[1].columnType !== haram))?.[0] ?? columnKeys[0]![0];
 
     selectedColumns.push([columnName, true]);
   }
@@ -124,9 +124,7 @@ export const extractSelectedColumnsFromTree = (
  * Can't automatically determine column type on type level
  * Since drizzle table types extend eachother
  */
-export const extractSelectedColumnsFromTreeSQLFormat = <
-  TColType extends Column = Column,
->(
+export const extractSelectedColumnsFromTreeSQLFormat = <TColType extends Column = Column>(
   tree: Record<string, ResolveTree>,
   table: Table,
 ): Record<string, TColType> => {
@@ -135,8 +133,10 @@ export const extractSelectedColumnsFromTreeSQLFormat = <
   const treeEntries = Object.entries(tree);
   const selectedColumns: SelectedSQLColumns = [];
 
-  for (const [fieldName, fieldData] of treeEntries) {
-    if (!tableColumns[fieldData.name]) continue;
+  for (const [_fieldName, fieldData] of treeEntries) {
+    if (!tableColumns[fieldData.name]) {
+      continue;
+    }
 
     selectedColumns.push([fieldData.name, tableColumns[fieldData.name]!]);
   }
@@ -144,9 +144,7 @@ export const extractSelectedColumnsFromTreeSQLFormat = <
   if (!selectedColumns.length) {
     const columnKeys = Object.entries(tableColumns);
     const columnName =
-      columnKeys.find((e) =>
-        rqbCrashTypes.find((haram) => e[1].columnType !== haram),
-      )?.[0] ?? columnKeys[0]![0];
+      columnKeys.find((e) => rqbCrashTypes.find((haram) => e[1].columnType !== haram))?.[0] ?? columnKeys[0]![0];
 
     selectedColumns.push([columnName, tableColumns[columnName]!]);
   }
@@ -196,18 +194,24 @@ const resolveGenericFilterName = (
   columnGraphQLType: ReturnType<typeof drizzleColumnToGraphQLType>,
 ): string => {
   // ID / foreign-key columns
-  if (columnName === "id" || columnName.endsWith("Id")) return "Id";
+  if (columnName === 'id' || columnName.endsWith('Id')) {
+    return 'Id';
+  }
   // Boolean scalar
-  if (columnGraphQLType.type === GraphQLBoolean) return "Boolean";
+  if (columnGraphQLType.type === GraphQLBoolean) {
+    return 'Boolean';
+  }
   // Enum type — keep unique per enum since values differ
-  if (columnGraphQLType.type instanceof GraphQLEnumType)
+  if (columnGraphQLType.type instanceof GraphQLEnumType) {
     return columnGraphQLType.type.name;
+  }
   // Date / timestamp columns (check Drizzle internal columnType string)
-  const ct: string = (column as any).columnType ?? "";
-  if (ct === "PgTimestamp" || ct === "PgTimestampString" || ct === "PgDate")
-    return "DateTime";
+  const ct: string = (column as any).columnType ?? '';
+  if (ct === 'PgTimestamp' || ct === 'PgTimestampString' || ct === 'PgDate') {
+    return 'DateTime';
+  }
   // Default: plain text/varchar
-  return "String";
+  return 'String';
 };
 
 const generateColumnFilterValues = (
@@ -216,25 +220,20 @@ const generateColumnFilterValues = (
   columnName: string,
   cacheCtx: TypeCacheCtx,
 ): GraphQLInputObjectType => {
-  const columnGraphQLType = drizzleColumnToGraphQLType(
-    column,
-    columnName,
-    tableName,
-    true,
-    false,
-    true,
-  );
+  const columnGraphQLType = drizzleColumnToGraphQLType(column, columnName, tableName, true, false, true);
 
   const genericName = resolveGenericFilterName(column, columnName, columnGraphQLType);
   const cached = cacheCtx.genericFilterCache.get(genericName);
-  if (cached) return cached.main;
+  if (cached) {
+    return cached.main;
+  }
 
   const colType = columnGraphQLType.type;
   const colDesc = columnGraphQLType.description;
   const colArr = new GraphQLList(new GraphQLNonNull(colType));
 
   // IdFilter omits like/notLike/ilike/notIlike — they are nonsensical on UUIDs.
-  const isId = genericName === "Id";
+  const isId = genericName === 'Id';
 
   const baseFields = {
     eq: { type: colType, description: colDesc },
@@ -278,30 +277,29 @@ const generateColumnFilterValues = (
 
 const orderMap = new WeakMap<Object, Record<string, ConvertedInputColumn>>();
 const generateTableOrderCached = (table: Table) => {
-  if (orderMap.has(table)) return orderMap.get(table)!;
+  if (orderMap.has(table)) {
+    return orderMap.get(table)!;
+  }
 
   let remapped = {};
-  try{
-  const columns = getColumns(table);
-  const columnEntries = Object.entries(columns);
+  try {
+    const columns = getColumns(table);
+    const columnEntries = Object.entries(columns);
 
-  remapped = Object.fromEntries(
-    columnEntries.map(([columnName, columnDescription]) => [
-      columnName,
-      { type: innerOrder },
-    ]),
-  );
+    remapped = Object.fromEntries(
+      columnEntries.map(([columnName, _columnDescription]) => [columnName, { type: innerOrder }]),
+    );
 
-  orderMap.set(table, remapped);
-
-  }catch(err) {
-  }
+    orderMap.set(table, remapped);
+  } catch (_err) {}
   return remapped;
 };
 
 const filterMap = new WeakMap<Object, Record<string, ConvertedInputColumn>>();
 const generateTableFilterValuesCached = (table: Table, tableName: string, cacheCtx: TypeCacheCtx) => {
-  if (filterMap.has(table)) return filterMap.get(table)!;
+  if (filterMap.has(table)) {
+    return filterMap.get(table)!;
+  }
 
   const columns = getColumns(table);
   const columnEntries = Object.entries(columns);
@@ -310,12 +308,7 @@ const generateTableFilterValuesCached = (table: Table, tableName: string, cacheC
     columnEntries.map(([columnName, columnDescription]) => [
       columnName,
       {
-        type: generateColumnFilterValues(
-          columnDescription,
-          tableName,
-          columnName,
-          cacheCtx,
-        ),
+        type: generateColumnFilterValues(columnDescription, tableName, columnName, cacheCtx),
       },
     ]),
   );
@@ -326,11 +319,10 @@ const generateTableFilterValuesCached = (table: Table, tableName: string, cacheC
 };
 
 const fieldMap = new WeakMap<Object, Record<string, ConvertedColumn>>();
-const generateTableSelectTypeFieldsCached = (
-  table: Table,
-  tableName: string,
-): Record<string, ConvertedColumn> => {
-  if (fieldMap.has(table)) return fieldMap.get(table)!;
+const generateTableSelectTypeFieldsCached = (table: Table, tableName: string): Record<string, ConvertedColumn> => {
+  if (fieldMap.has(table)) {
+    return fieldMap.get(table)!;
+  }
 
   const columns = getColumns(table);
   const columnEntries = Object.entries(columns);
@@ -349,7 +341,9 @@ const generateTableSelectTypeFieldsCached = (
 
 const orderTypeMap = new WeakMap<Object, GraphQLInputObjectType>();
 const generateTableOrderTypeCached = (table: Table, tableName: string) => {
-  if (orderTypeMap.has(table)) return orderTypeMap.get(table)!;
+  if (orderTypeMap.has(table)) {
+    return orderTypeMap.get(table)!;
+  }
 
   const orderColumns = generateTableOrderCached(table);
   const order = new GraphQLInputObjectType({
@@ -364,7 +358,9 @@ const generateTableOrderTypeCached = (table: Table, tableName: string) => {
 
 const filterTypeMap = new WeakMap<Object, GraphQLInputObjectType>();
 const generateTableFilterTypeCached = (table: Table, tableName: string, cacheCtx: TypeCacheCtx) => {
-  if (filterTypeMap.has(table)) return filterTypeMap.get(table)!;
+  if (filterTypeMap.has(table)) {
+    return filterTypeMap.get(table)!;
+  }
 
   const filterColumns = generateTableFilterValuesCached(table, tableName, cacheCtx);
   const filters = new GraphQLInputObjectType({
@@ -411,16 +407,12 @@ const generateSelectFields = <TWithOrder extends boolean>(
   usedTables: Set<string> = new Set(),
 ): SelectData<TWithOrder> => {
   const table = tables[tableName]!;
-  const order = withOrder
-    ? generateTableOrderTypeCached(table, tableName)
-    : undefined;
+  const order = withOrder ? generateTableOrderTypeCached(table, tableName) : undefined;
   const filters = generateTableFilterTypeCached(table, tableName, cacheCtx);
   const tableFields = generateTableSelectTypeFieldsCached(table, tableName);
 
   const relationsForTable = relationMap[tableName];
-  const relationEntries: [string, TableNamedRelations][] = relationsForTable
-    ? Object.entries(relationsForTable)
-    : [];
+  const relationEntries: [string, TableNamedRelations][] = relationsForTable ? Object.entries(relationsForTable.relations) : [];
 
   // If this table is already being processed (cycle), stop recursing.
   // Return just the base fields with no relation fields.
@@ -469,6 +461,7 @@ const generateSelectFields = <TWithOrder extends boolean>(
     const nextUsedTables = new Set(usedTables);
     nextUsedTables.add(tableName);
 
+
     for (const [relationName, relEntry] of relationEntries) {
       const { targetTableName } = relEntry;
       const relation = (relEntry as any).relation ?? relEntry;
@@ -480,8 +473,8 @@ const generateSelectFields = <TWithOrder extends boolean>(
         tables,
         targetTableName,
         relationMap,
-        tableName,       // fromTableName for the relation type
-        relationName,    // fromRelationName for the relation type
+        tableName, // fromTableName for the relation type
+        relationName, // fromRelationName for the relation type
         !isOne,
         undefined,
         cacheCtx,
@@ -552,8 +545,8 @@ export const generateTableTypes = <WithReturning extends boolean>(
     tables,
     tableName,
     relationMap,
-    '',          // root call: no fromTableName
-    '',          // root call: no fromRelationName
+    '', // root call: no fromTableName
+    '', // root call: no fromRelationName
     true,
     relationsDepthLimit,
     cacheCtx,
@@ -563,33 +556,19 @@ export const generateTableTypes = <WithReturning extends boolean>(
   const columns = getColumns(table);
   const columnEntries = Object.entries(columns);
 
-  const insertNested = drizzleRelationToGraphQLInsertType(tables, relationMap[tableName] ?? {});
+  const _insertNested = drizzleRelationToGraphQLInsertType(tables, relationMap[tableName] ?? {});
 
   const insertFields = Object.fromEntries(
     columnEntries.map(([columnName, columnDescription]) => [
       columnName,
-      drizzleColumnToGraphQLType(
-        columnDescription,
-        columnName,
-        tableName,
-        false,
-        true,
-        true,
-      ),
+      drizzleColumnToGraphQLType(columnDescription, columnName, tableName, false, true, true),
     ]),
   );
 
   const updateFields = Object.fromEntries(
     columnEntries.map(([columnName, columnDescription]) => [
       columnName,
-      drizzleColumnToGraphQLType(
-        columnDescription,
-        columnName,
-        tableName,
-        true,
-        false,
-        true,
-      ),
+      drizzleColumnToGraphQLType(columnDescription, columnName, tableName, true, false, true),
     ]),
   );
 
@@ -613,9 +592,7 @@ export const generateTableTypes = <WithReturning extends boolean>(
       fields: { ...tableFields, ...relationFields },
     });
 
-  const selectArrOutput = new GraphQLNonNull(
-    new GraphQLList(new GraphQLNonNull(selectSingleOutput)),
-  );
+  const selectArrOutput = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput)));
 
   // Mutation return type: ${capitalize(tableName)}Item (table columns only, no relations)
   const singleTableItemOutput = withReturning
@@ -626,9 +603,7 @@ export const generateTableTypes = <WithReturning extends boolean>(
     : undefined;
 
   const arrTableItemOutput = withReturning
-    ? new GraphQLNonNull(
-        new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)),
-      )
+    ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)))
     : undefined;
 
   const inputs = {
@@ -658,10 +633,7 @@ export const generateTableTypes = <WithReturning extends boolean>(
   };
 };
 
-export const extractOrderBy = <
-  TTable extends Table,
-  TArgs extends OrderByArgs<any> = OrderByArgs<TTable>,
->(
+export const extractOrderBy = <TTable extends Table, TArgs extends OrderByArgs<any> = OrderByArgs<TTable>>(
   table: TTable,
   orderArgs: TArgs,
 ): SQL[] => {
@@ -670,14 +642,12 @@ export const extractOrderBy = <
   for (const [column, config] of Object.entries(orderArgs).sort(
     (a, b) => (b[1]?.priority ?? 0) - (a[1]?.priority ?? 0),
   )) {
-    if (!config) continue;
+    if (!config) {
+      continue;
+    }
     const { direction } = config;
 
-    res.push(
-      direction === 'asc'
-        ? asc(getColumns(table)[column]!)
-        : desc(getColumns(table)[column]!),
-    );
+    res.push(direction === 'asc' ? asc(getColumns(table)[column]!) : desc(getColumns(table)[column]!));
   }
 
   return res;
@@ -688,17 +658,15 @@ export const extractFiltersColumn = <TColumn extends Column>(
   columnName: string,
   operators: FilterColumnOperators<TColumn>,
 ): SQL | undefined => {
-  if (!operators.OR?.length) delete operators.OR;
+  if (!operators.OR?.length) {
+    delete operators.OR;
+  }
 
-  const entries = Object.entries(
-    operators as FilterColumnOperatorsCore<TColumn>,
-  );
+  const entries = Object.entries(operators as FilterColumnOperatorsCore<TColumn>);
 
   if (operators.OR) {
     if (entries.length > 1) {
-      throw new GraphQLError(
-        `WHERE ${columnName}: Cannot specify both fields and 'OR' in column operators!`,
-      );
+      throw new GraphQLError(`WHERE ${columnName}: Cannot specify both fields and 'OR' in column operators!`);
     }
 
     const variants = [] as SQL[];
@@ -706,19 +674,19 @@ export const extractFiltersColumn = <TColumn extends Column>(
     for (const variant of operators.OR) {
       const extracted = extractFiltersColumn(column, columnName, variant);
 
-      if (extracted) variants.push(extracted);
+      if (extracted) {
+        variants.push(extracted);
+      }
     }
 
-    return variants.length
-      ? variants.length > 1
-        ? or(...variants)
-        : variants[0]
-      : undefined;
+    return variants.length ? (variants.length > 1 ? or(...variants) : variants[0]) : undefined;
   }
 
   const variants = [] as SQL[];
   for (const [operatorName, operatorValue] of entries) {
-    if (operatorValue === null || operatorValue === false) continue;
+    if (operatorValue === null || operatorValue === false) {
+      continue;
+    }
 
     let operator: ((...args: any[]) => SQL) | undefined;
     switch (operatorName as keyof FilterColumnOperatorsCore<TColumn>) {
@@ -735,11 +703,7 @@ export const extractFiltersColumn = <TColumn extends Column>(
       case 'lte': {
         operator = operator ?? lte;
 
-        const singleValue = remapFromGraphQLCore(
-          operatorValue,
-          column,
-          columnName,
-        );
+        const singleValue = remapFromGraphQLCore(operatorValue, column, columnName);
         variants.push(operator(column, singleValue));
 
         break;
@@ -764,13 +728,9 @@ export const extractFiltersColumn = <TColumn extends Column>(
         operator = operator ?? notInArray;
 
         if (!(operatorValue as any[]).length) {
-          throw new GraphQLError(
-            `WHERE ${columnName}: Unable to use operator ${operatorName} with an empty array!`,
-          );
+          throw new GraphQLError(`WHERE ${columnName}: Unable to use operator ${operatorName} with an empty array!`);
         }
-        const arrayValue = (operatorValue as any[]).map((val) =>
-          remapFromGraphQLCore(val, column, columnName),
-        );
+        const arrayValue = (operatorValue as any[]).map((val) => remapFromGraphQLCore(val, column, columnName));
 
         variants.push(operator(column, arrayValue));
         break;
@@ -785,11 +745,7 @@ export const extractFiltersColumn = <TColumn extends Column>(
     }
   }
 
-  return variants.length
-    ? variants.length > 1
-      ? and(...variants)
-      : variants[0]
-    : undefined;
+  return variants.length ? (variants.length > 1 ? and(...variants) : variants[0]) : undefined;
 };
 
 export const extractFilters = <TTable extends Table>(
@@ -797,45 +753,43 @@ export const extractFilters = <TTable extends Table>(
   tableName: string,
   filters: Filters<TTable>,
 ): SQL | undefined => {
-  if (!filters.OR?.length) delete filters.OR;
+  if (!filters.OR?.length) {
+    delete filters.OR;
+  }
 
   const entries = Object.entries(filters as FiltersCore<TTable>);
-  if (!entries.length) return;
+  if (!entries.length) {
+    return;
+  }
 
   if (filters.OR) {
     if (entries.length > 1) {
-      throw new GraphQLError(
-        `WHERE ${tableName}: Cannot specify both fields and 'OR' in table filters!`,
-      );
+      throw new GraphQLError(`WHERE ${tableName}: Cannot specify both fields and 'OR' in table filters!`);
     }
 
     const variants = [] as SQL[];
 
     for (const variant of filters.OR) {
       const extracted = extractFilters(table, tableName, variant);
-      if (extracted) variants.push(extracted);
+      if (extracted) {
+        variants.push(extracted);
+      }
     }
 
-    return variants.length
-      ? variants.length > 1
-        ? or(...variants)
-        : variants[0]
-      : undefined;
+    return variants.length ? (variants.length > 1 ? or(...variants) : variants[0]) : undefined;
   }
 
   const variants = [] as SQL[];
   for (const [columnName, operators] of entries) {
-    if (operators === null) continue;
+    if (operators === null) {
+      continue;
+    }
 
     const column = getColumns(table)[columnName]!;
     variants.push(extractFiltersColumn(column, columnName, operators)!);
   }
 
-  return variants.length
-    ? variants.length > 1
-      ? and(...variants)
-      : variants[0]
-    : undefined;
+  return variants.length ? (variants.length > 1 ? and(...variants) : variants[0]) : undefined;
 };
 
 const extractRelationsParamsInner = (
@@ -844,15 +798,17 @@ const extractRelationsParamsInner = (
   tableName: string,
   typeName: string,
   originField: ResolveTree,
-  isInitial: boolean = false,
+  _isInitial: boolean = false,
 ) => {
   const relations = relationMap[tableName];
-  if (!relations) return undefined;
+  if (!relations) {
+    return undefined;
+  }
 
-  const baseField = Object.entries(originField.fieldsByTypeName).find(
-    ([key, value]) => key === typeName,
-  )?.[1];
-  if (!baseField) return undefined;
+  const baseField = Object.entries(originField.fieldsByTypeName).find(([key, _value]) => key === typeName)?.[1];
+  if (!baseField) {
+    return undefined;
+  }
 
   const args: Record<string, Partial<ProcessedTableSelectArgs>> = {};
 
@@ -861,31 +817,27 @@ const extractRelationsParamsInner = (
     const relTypeName = `${capitalize(tableName)}${capitalize(relName)}Relation`;
     // Look up by field name OR by alias (when the caller uses an alias for the relation).
     // graphql-parse-resolve-info keys fieldsByTypeName entries by alias.
-    const field =
-      baseField[relName] ??
-      Object.values(baseField).find((f) => (f as ResolveTree).name === relName);
-    if (!field) continue;
+    const field = baseField[relName] ?? Object.values(baseField).find((f) => (f as ResolveTree).name === relName);
+    if (!field) {
+      continue;
+    }
     const relField = (field as ResolveTree)?.fieldsByTypeName;
     const relFieldSelection = relField?.[relTypeName];
 
     // Guard: if the relation type is not in fieldsByTypeName, this field is
     // either an aliased scalar column (not an actual relation) or the relation
     // was not selected in the query. Skip it in both cases.
-    if (!relFieldSelection) continue;
+    if (!relFieldSelection) {
+      continue;
+    }
 
-    const columns = extractSelectedColumnsFromTree(
-      relFieldSelection,
-      tables[targetTableName]!,
-    );
+    const columns = extractSelectedColumnsFromTree(relFieldSelection, tables[targetTableName]!);
 
     const thisRecord: Partial<ProcessedTableSelectArgs> = {};
     thisRecord.columns = columns;
 
-    const relationField = Object.values(baseField).find(
-      (e) => e.name === relName,
-    );
-    const relationArgs: Partial<TableSelectArgs> | undefined =
-      relationField?.args;
+    const relationField = Object.values(baseField).find((e) => e.name === relName);
+    const relationArgs: Partial<TableSelectArgs> | undefined = relationField?.args;
 
     const offset = relationArgs?.offset ?? undefined;
     const limit = relationArgs?.limit ?? undefined;
@@ -905,13 +857,7 @@ const extractRelationsParamsInner = (
     thisRecord.limit = limit;
 
     const relWith = relationField
-      ? extractRelationsParamsInner(
-          relationMap,
-          tables,
-          targetTableName,
-          relTypeName,
-          relationField,
-        )
+      ? extractRelationsParamsInner(relationMap, tables, targetTableName, relTypeName, relationField)
       : undefined;
     thisRecord.with = relWith;
 
@@ -928,14 +874,9 @@ export const extractRelationsParams = (
   info: ResolveTree | undefined,
   typeName: string,
 ): Record<string, Partial<ProcessedTableSelectArgs>> | undefined => {
-  if (!info) return undefined;
+  if (!info) {
+    return undefined;
+  }
 
-  return extractRelationsParamsInner(
-    relationMap,
-    tables,
-    tableName,
-    typeName,
-    info,
-    true,
-  );
+  return extractRelationsParamsInner(relationMap, tables, tableName, typeName, info, true);
 };
