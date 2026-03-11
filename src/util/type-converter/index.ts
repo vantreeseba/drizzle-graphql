@@ -3,7 +3,6 @@ import { extractExtendedColumnType, getColumns, is } from 'drizzle-orm';
 import { MySqlInt, MySqlSerial } from 'drizzle-orm/mysql-core';
 import { PgDateString, PgInteger, PgSerial, PgTimestamp, PgTimestampString } from 'drizzle-orm/pg-core';
 import { SQLiteInteger } from 'drizzle-orm/sqlite-core';
-import { GraphQLDate, GraphQLDateTime } from 'graphql-scalars';
 import {
   GraphQLBoolean,
   GraphQLEnumType,
@@ -16,20 +15,18 @@ import {
   type GraphQLScalarType,
   GraphQLString,
 } from 'graphql';
+import { GraphQLDate, GraphQLDateTime } from 'graphql-scalars';
+import type { TableNamedRelations } from '../builders/types.ts';
 import { capitalize } from '../case-ops/index.ts';
 import type { ConvertedColumn } from './types.ts';
-import type {TableNamedRelations} from '../builders/types.ts';
-import {extractFilters} from '../builders/common.ts';
 
 const allowedNameChars = /^[a-zA-Z0-9_]+$/;
 
 const enumMap = new WeakMap<Object, GraphQLEnumType>();
-const generateEnumCached = (
-  column: Column,
-  columnName: string,
-  tableName: string,
-): GraphQLEnumType => {
-  if (enumMap.has(column)) return enumMap.get(column)!;
+const generateEnumCached = (column: Column, columnName: string, tableName: string): GraphQLEnumType => {
+  if (enumMap.has(column)) {
+    return enumMap.get(column)!;
+  }
 
   const gqlEnum = new GraphQLEnumType({
     name: `${capitalize(tableName)}${capitalize(columnName)}Enum`,
@@ -91,8 +88,9 @@ const columnToGraphQLCore = (
             }
           : { type: GraphQLString, description: 'JSON' };
     case 'string':
-      if (column.enumValues?.length)
+      if (column.enumValues?.length) {
         return { type: generateEnumCached(column, columnName, tableName) };
+      }
 
       if (column instanceof PgTimestamp || column instanceof PgTimestampString) {
         return { type: GraphQLDateTime, description: 'DateTime' };
@@ -135,77 +133,56 @@ const columnToGraphQLCore = (
       );
 
       return {
-        type: new GraphQLList(
-          new GraphQLNonNull(innerType.type as GraphQLScalarType),
-        ),
+        type: new GraphQLList(new GraphQLNonNull(innerType.type as GraphQLScalarType)),
         description: `Array<${innerType.description}>`,
       };
     }
-    case 'custom':
     default:
-      throw new Error(
-        `Drizzle-GraphQL Error: Type ${column.dataType} is not implemented!`,
-      );
+      throw new Error(`Drizzle-GraphQL Error: Type ${column.dataType} is not implemented!`);
   }
 };
 
-export const drizzleRelationToGraphQLInsertType = (
-  tables: Record<string, Table>,
-  relationMap: TableNamedRelations,
-) => {
-
-  if(!relationMap){
-    return null
+export const drizzleRelationToGraphQLInsertType = (tables: Record<string, Table>, relationMap: TableNamedRelations) => {
+  if (!relationMap) {
+    return null;
   }
 
-  for(const [tableName, val] of Object.entries(relationMap)){
+  for (const [tableName, _val] of Object.entries(relationMap)) {
     const table = tables[tableName];
-    if(!table) {
+    if (!table) {
       continue;
     }
-    const columns = getColumns(table)
-    const columnEntries = Object.entries(columns).filter(([key, value]) => value.primary);
+    const columns = getColumns(table);
+    const columnEntries = Object.entries(columns).filter(([_key, value]) => value.primary);
 
-    const connectFields = Object.fromEntries(
+    const _connectFields = Object.fromEntries(
       columnEntries.map(([columnName, columnDescription]) => [
         columnName,
-        drizzleColumnToGraphQLType(
-          columnDescription,
-          columnName,
-          tableName,
-          false,
-          true,
-          true,
-        ),
+        drizzleColumnToGraphQLType(columnDescription, columnName, tableName, false, true, true),
       ]),
     );
-
   }
 
-
-//   const typeDesc = columnToGraphQLCore(column, columnName, tableName, isInput);
-//   const noDesc = ['string', 'boolean', 'number'];
-//   const { type: baseType } = extractExtendedColumnType(column);
-//   if (noDesc.find((e) => e === baseType)) delete typeDesc.description;
-//
-//   if (forceNullable) return typeDesc as ConvertedColumn<TIsInput>;
-//   if (
-//     column.notNull &&
-//     !(defaultIsNullable && (column.hasDefault || column.defaultFn))
-//   ) {
-//     return {
-//       type: new GraphQLNonNull(typeDesc.type),
-//       description: typeDesc.description,
-//     } as ConvertedColumn<TIsInput>;
-//   }
-//
-//   return typeDesc as ConvertedColumn<TIsInput>;
+  //   const typeDesc = columnToGraphQLCore(column, columnName, tableName, isInput);
+  //   const noDesc = ['string', 'boolean', 'number'];
+  //   const { type: baseType } = extractExtendedColumnType(column);
+  //   if (noDesc.find((e) => e === baseType)) delete typeDesc.description;
+  //
+  //   if (forceNullable) return typeDesc as ConvertedColumn<TIsInput>;
+  //   if (
+  //     column.notNull &&
+  //     !(defaultIsNullable && (column.hasDefault || column.defaultFn))
+  //   ) {
+  //     return {
+  //       type: new GraphQLNonNull(typeDesc.type),
+  //       description: typeDesc.description,
+  //     } as ConvertedColumn<TIsInput>;
+  //   }
+  //
+  //   return typeDesc as ConvertedColumn<TIsInput>;
 };
 
-export const drizzleColumnToGraphQLType = <
-  TColumn extends Column,
-  TIsInput extends boolean,
->(
+export const drizzleColumnToGraphQLType = <TColumn extends Column, TIsInput extends boolean>(
   column: TColumn,
   columnName: string,
   tableName: string,
@@ -216,13 +193,14 @@ export const drizzleColumnToGraphQLType = <
   const typeDesc = columnToGraphQLCore(column, columnName, tableName, isInput);
   const noDesc = ['string', 'boolean', 'number'];
   const { type: baseType } = extractExtendedColumnType(column);
-  if (noDesc.find((e) => e === baseType)) delete typeDesc.description;
+  if (noDesc.find((e) => e === baseType)) {
+    delete typeDesc.description;
+  }
 
-  if (forceNullable) return typeDesc as ConvertedColumn<TIsInput>;
-  if (
-    column.notNull &&
-    !(defaultIsNullable && (column.hasDefault || column.defaultFn))
-  ) {
+  if (forceNullable) {
+    return typeDesc as ConvertedColumn<TIsInput>;
+  }
+  if (column.notNull && !(defaultIsNullable && (column.hasDefault || column.defaultFn))) {
     return {
       type: new GraphQLNonNull(typeDesc.type),
       description: typeDesc.description,
