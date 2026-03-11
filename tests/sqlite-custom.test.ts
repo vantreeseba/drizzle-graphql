@@ -47,8 +47,10 @@ beforeAll(async () => {
 		throw lastError;
 	}
 
-	ctx.db = drizzle(ctx.client, {
+	ctx.db = drizzle({
+		client: ctx.client,
 		schema,
+		relations: schema.relations,
 		logger: process.env['LOG_SQL'] ? true : false,
 	});
 

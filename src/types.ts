@@ -558,4 +558,9 @@ export type BuildSchemaConfig = {
     /** Suffix for single queries (e.g., 'users' -> 'users' + suffix) */
     single?: string;
   };
+  /**
+   * When true, insert mutations will use onConflictDoNothing() to silently
+   * ignore duplicate key violations. Defaults to false (conflicts throw errors).
+   */
+  conflictDoNothing?: boolean;
 };

@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { buildRelations, createRelationsHelper } from 'drizzle-orm';
 import {
 	boolean,
 	char,
@@ -55,29 +55,29 @@ export const Posts = pgTable('posts', {
 	authorId: integer('author_id'),
 });
 
-export const usersRelations = relations(Users, ({ one, many }) => ({
-	posts: many(Posts),
-	customer: one(Customers, {
-		fields: [Users.id],
-		references: [Customers.userId],
-	}),
-}));
+export const Tags = pgTable('tags', {
+	id: serial('id').primaryKey(),
+	name: text('name').notNull(),
+	description: text('description'),
+});
+// No tagsRelations export — this table intentionally has NO relations
 
-export const customersRelations = relations(Customers, ({ one, many }) => ({
-	user: one(Users, {
-		fields: [Customers.userId],
-		references: [Users.id],
-	}),
-	posts: many(Posts),
-}));
+const r = createRelationsHelper({ Users, Customers, Posts, Tags });
 
-export const postsRelations = relations(Posts, ({ one }) => ({
-	author: one(Users, {
-		fields: [Posts.authorId],
-		references: [Users.id],
-	}),
-	customer: one(Customers, {
-		fields: [Posts.authorId],
-		references: [Customers.userId],
-	}),
-}));
+export const relations = buildRelations(
+	{ Users, Customers, Posts, Tags },
+	{
+		Users: {
+			posts: r.many.Posts({ from: r.Users.id, to: r.Posts.authorId }),
+			customer: r.one.Customers({ from: r.Users.id, to: r.Customers.userId }),
+		},
+		Customers: {
+			user: r.one.Users({ from: r.Customers.userId, to: r.Users.id }),
+			posts: r.many.Posts({ from: r.Customers.userId, to: r.Posts.authorId }),
+		},
+		Posts: {
+			author: r.one.Users({ from: r.Posts.authorId, to: r.Users.id }),
+			customer: r.one.Customers({ from: r.Posts.authorId, to: r.Customers.userId }),
+		},
+	},
+);

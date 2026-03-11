@@ -100,8 +100,10 @@ beforeAll(async () => {
 		throw lastError;
 	}
 
-	ctx.db = drizzle(ctx.client, {
+	ctx.db = drizzle({
+		client: ctx.client,
 		schema,
+		relations: schema.relations,
 		logger: process.env['LOG_SQL'] ? true : false,
 	});
 
@@ -151,6 +153,12 @@ beforeEach(async () => {
 		"id" serial PRIMARY KEY NOT NULL,
 		"content" text,
 		"author_id" integer
+	);`);
+
+	await ctx.db.execute(sql`CREATE TABLE IF NOT EXISTS "tags" (
+		"id" serial PRIMARY KEY NOT NULL,
+		"name" text NOT NULL,
+		"description" text
 	);`);
 
 	await ctx.db.execute(sql`CREATE TABLE IF NOT EXISTS "users" (
@@ -264,6 +272,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	await ctx.db.execute(sql`DROP TABLE IF EXISTS "tags" CASCADE;`);
 	await ctx.db.execute(sql`DROP TABLE "posts" CASCADE;`);
 	await ctx.db.execute(sql`DROP TABLE "customers" CASCADE;`);
 	await ctx.db.execute(sql`DROP TABLE "users" CASCADE;`);
@@ -4281,5 +4290,83 @@ describe.sequential('__typename with data tests', async () => {
 				],
 			},
 		});
+	});
+});
+
+describe('buildSchema idempotency', () => {
+	it('can call buildSchema twice on the same db without type name conflicts', () => {
+		expect(() => {
+			buildSchema(ctx.db);
+			buildSchema(ctx.db);
+		}).not.toThrow();
+	});
+});
+
+describe('Table without relations (Tags)', () => {
+	it('Query tags list and single without relations', async () => {
+		await ctx.db.insert(schema.Tags).values([{ id: 1, name: 'JavaScript', description: 'JS tag' }]);
+
+		const res = await ctx.gql.queryGql(/* GraphQL */ `
+			{
+				tags { id name description }
+				tagsSingle { id name description }
+			}
+		`);
+
+		expect(res.data.tags).toEqual([{ id: 1, name: 'JavaScript', description: 'JS tag' }]);
+		expect(res.data.tagsSingle).toEqual({ id: 1, name: 'JavaScript', description: 'JS tag' });
+	});
+
+	it('Insert single tag without relations', async () => {
+		const res = await ctx.gql.queryGql(/* GraphQL */ `
+			mutation {
+				insertIntoTagsSingle(values: { name: "TypeScript", description: "TS tag" }) {
+					id
+					name
+					description
+				}
+			}
+		`);
+
+		expect(res.errors).toBeUndefined();
+		expect(res.data?.insertIntoTagsSingle?.name).toBe('TypeScript');
+		expect(res.data?.insertIntoTagsSingle?.description).toBe('TS tag');
+	});
+
+	it('Insert multiple tags without relations', async () => {
+		const res = await ctx.gql.queryGql(/* GraphQL */ `
+			mutation {
+				insertIntoTags(values: [
+					{ name: "Go", description: "Go tag" }
+					{ name: "Rust", description: "Rust tag" }
+				]) {
+					id
+					name
+					description
+				}
+			}
+		`);
+
+		expect(res.errors).toBeUndefined();
+		expect(res.data?.insertIntoTags).toHaveLength(2);
+	});
+});
+
+describe('Insert conflict behavior (no onConflictDoNothing by default)', () => {
+	it('Insert single raises error on duplicate PK (no onConflictDoNothing)', async () => {
+		// id=1 for Users already exists from beforeEach — inserting it again should error
+		const res = await ctx.gql.queryGql(/* GraphQL */ `
+			mutation {
+				insertIntoUsersSingle(values: { id: 1, name: "Duplicate", createdAt: "2024-04-02T06:44:41.785Z" }) {
+					id
+					name
+				}
+			}
+		`);
+
+		// Without onConflictDoNothing, duplicate PK must produce a GraphQL error,
+		// NOT silently return undefined.
+		expect(res.errors).toBeDefined();
+		expect(res.errors!.length).toBeGreaterThan(0);
 	});
 });

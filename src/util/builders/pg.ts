@@ -35,6 +35,7 @@ import {
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  type TypeCacheCtx,
 } from '../builders/common.ts';
 import {
   capitalize,
@@ -68,11 +69,7 @@ const generateSelectArray = (
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
-  if (!queryBase) {
-    throw new Error(
-      `Drizzle-GraphQL Error: Table ${tableName} not found in drizzle instance. Did you forget to pass schema to drizzle constructor?`,
-    );
-  }
+  // Tables without relations won't have db.query support — fall back to basic select.
 
   const queryArgs = {
     offset: {
@@ -89,7 +86,7 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${tableNameToModel(tableName)}`;
+  const typeName = `${capitalize(tableName)}SelectItem`;
   const table = tables[tableName]!;
 
   return {
@@ -102,39 +99,48 @@ const generateSelectArray = (
           deep: true,
         }) as ResolveTree;
 
-        const withParams = relationMap[tableName]
-          ? extractRelationsParams(
-              relationMap,
-              tables,
-              tableName,
-              parsedInfo,
-              typeName,
-            )
-          : undefined;
+        const selectedColumns = extractSelectedColumnsFromTree(
+          parsedInfo.fieldsByTypeName[typeName]!,
+          table,
+        );
 
-        const query = queryBase.findMany({
-          columns: extractSelectedColumnsFromTree(
-            parsedInfo.fieldsByTypeName[typeName]!,
-            table,
-          ) 
-          /*extractSelectedColumnsFromNode(tableSelection, info.fragments, table) */,
-          offset,
-          limit,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
-          // d0, d1) — use it directly so column refs match the CTE alias.
-          orderBy: orderBy
-            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
-            : undefined,
-          where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
-          with: withParams,
-        });
+        let result: any[];
+        if (queryBase) {
+          const withParams = relationMap[tableName]
+            ? extractRelationsParams(
+                relationMap,
+                tables,
+                tableName,
+                parsedInfo,
+                typeName,
+              )
+            : undefined;
 
-        const result = await query;
+          result = await queryBase.findMany({
+            columns: selectedColumns,
+            offset,
+            limit,
+            // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
+            // d0, d1) — use it directly so column refs match the CTE alias.
+            orderBy: orderBy
+              ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
+              : undefined,
+            where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
+            with: withParams,
+          });
+        } else {
+          // Fallback for tables without relational query builder support.
+          let q = db.select(selectedColumns).from(table);
+          if (where) q = q.where(extractFilters(table, tableName, where)) as any;
+          if (orderBy) q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
+          if (offset) q = q.offset(offset) as any;
+          if (limit) q = q.limit(limit) as any;
+          result = await q;
+        }
 
         return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
       } catch (e) {
-        if(e instanceof Error) {
-          console.trace(e)
+        if (e instanceof Error) {
           throw new GraphQLError(e.message);
         }
 
@@ -154,16 +160,11 @@ const generateSelectSingle = (
   filterArgs: GraphQLInputObjectType,
   singleSuffix: string,
 ): CreatedResolver => {
-
   const queryName = `${cleanTableName(tableName)}${singleSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
-  if (!queryBase) {
-    throw new Error(
-      `Drizzle-GraphQL Error: Table ${tableName} not found in drizzle instance. Did you forget to pass schema to drizzle constructor?`,
-    );
-  }
+  // Tables without relations won't have db.query support — fall back to basic select.
 
   const queryArgs = {
     offset: {
@@ -177,7 +178,7 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${tableNameToModel(tableName)}`;
+  const typeName = `${capitalize(tableName)}SelectItem`;
   const table = tables[tableName]!;
 
   return {
@@ -190,33 +191,42 @@ const generateSelectSingle = (
           deep: true,
         }) as ResolveTree;
 
-        const query = queryBase.findFirst({
-          columns: extractSelectedColumnsFromTree(
-            parsedInfo.fieldsByTypeName[typeName]!,
-            table,
-          ),
-          offset,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
-          // d0, d1) — use it directly so column refs match the CTE alias.
-          orderBy: orderBy
-            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
-            : undefined,
-          where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
-          with: relationMap[tableName]
-            ? extractRelationsParams(
-                relationMap,
-                tables,
-                tableName,
-                parsedInfo,
-                typeName,
-              )
-            : undefined,
-        });
+        const selectedColumns = extractSelectedColumnsFromTree(
+          parsedInfo.fieldsByTypeName[typeName]!,
+          table,
+        );
 
+        let result: any;
+        if (queryBase) {
+          result = await queryBase.findFirst({
+            columns: selectedColumns,
+            offset,
+            // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
+            // d0, d1) — use it directly so column refs match the CTE alias.
+            orderBy: orderBy
+              ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
+              : undefined,
+            where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
+            with: relationMap[tableName]
+              ? extractRelationsParams(
+                  relationMap,
+                  tables,
+                  tableName,
+                  parsedInfo,
+                  typeName,
+                )
+              : undefined,
+          });
+        } else {
+          // Fallback for tables without relational query builder support.
+          let q = db.select(selectedColumns).from(table);
+          if (where) q = q.where(extractFilters(table, tableName, where)) as any;
+          if (orderBy) q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
+          if (offset) q = q.offset(offset) as any;
+          const rows = await q.limit(1);
+          result = rows[0];
+        }
 
-        
-
-        const result = await query;
         if (!result) return undefined;
 
         return remapToGraphQLSingleOutput(
@@ -226,7 +236,7 @@ const generateSelectSingle = (
           relationMap,
         );
       } catch (e) {
-        if(e instanceof Error) {
+        if (e instanceof Error) {
           throw new GraphQLError(e.message);
         }
 
@@ -243,9 +253,10 @@ const generateInsertArray = (
   table: PgTable,
   baseType: GraphQLInputObjectType,
   prefix: string,
+  conflictDoNothing: boolean = false,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = `${capitalize(tableName)}Item`;
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -274,15 +285,13 @@ const generateInsertArray = (
           table,
         );
 
-        const result = await db
-          .insert(table)
-          .values(input)
-          .returning(columns)
-          .onConflictDoNothing();
+        let query = db.insert(table).values(input).returning(columns);
+        if (conflictDoNothing) query = query.onConflictDoNothing() as any;
+        const result = await query;
 
         return remapToGraphQLArrayOutput(result, tableName, table);
       } catch (e) {
-        if(e instanceof Error) {
+        if (e instanceof Error) {
           throw new GraphQLError(e.message);
         }
 
@@ -299,9 +308,10 @@ const generateInsertSingle = (
   table: PgTable,
   baseType: GraphQLInputObjectType,
   prefix: string,
+  conflictDoNothing: boolean = false,
 ): CreatedResolver => {
-  const queryName = `${prefix}${tableNameToModel(tableName)}`;
-  const typeName = `${tableNameToModel(tableName)}`;
+  const queryName = `${prefix}${capitalize(tableName)}Single`;
+  const typeName = `${capitalize(tableName)}Item`;
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -329,17 +339,15 @@ const generateInsertSingle = (
           table,
         );
 
-        const result = await db
-          .insert(table)
-          .values(input)
-          .returning(columns)
-          .onConflictDoNothing();
+        let query = db.insert(table).values(input).returning(columns);
+        if (conflictDoNothing) query = query.onConflictDoNothing() as any;
+        const result = await query;
 
         if (!result[0]) return undefined;
 
         return remapToGraphQLSingleOutput(result[0], tableName, table);
       } catch (e) {
-        if(e instanceof Error) {
+        if (e instanceof Error) {
           throw new GraphQLError(e.message);
         }
 
@@ -359,7 +367,7 @@ const generateUpdate = (
   prefix: string,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${tableNameToModel(tableName)}`;
+  const typeName = `${capitalize(tableName)}Item`;
 
   const queryArgs = {
     set: {
@@ -425,7 +433,7 @@ const generateDelete = (
   prefix: string,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${tableNameToModel(tableName)}`;
+  const typeName = `${capitalize(tableName)}Item`;
 
   const queryArgs = {
     where: {
@@ -496,6 +504,7 @@ export function generateSchemaData<
   relationsDepthLimit: number | undefined,
   prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
+  conflictDoNothing: boolean = false,
 ): GeneratedEntities<TDrizzleInstance, TSchema>  {
   const schemaEntries = Object.entries(schema);
   const tableEntries = schemaEntries.filter(([key, value]) =>
@@ -509,6 +518,14 @@ export function generateSchemaData<
     );
   }
 
+  // Fresh cache per generateSchemaData call — prevents type name collisions
+  // when buildSchema() is called multiple times.
+  const cacheCtx: TypeCacheCtx = {
+    genericFilterCache: new Map(),
+    objectTypeCache: new Map(),
+    relationTypeCache: new Map(),
+  };
+
   const queries: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
   const mutations: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
   const gqlSchemaTypes = Object.fromEntries(
@@ -520,6 +537,7 @@ export function generateSchemaData<
         relations,
         true,
         relationsDepthLimit,
+        cacheCtx,
       ),
     ]),
   );
@@ -561,6 +579,7 @@ export function generateSchemaData<
       schema[tableName] as PgTable,
       insertInput,
       prefixes.insert,
+      conflictDoNothing,
     );
     const insertSingleGenerated = generateInsertSingle(
       db,
@@ -568,6 +587,7 @@ export function generateSchemaData<
       schema[tableName] as PgTable,
       insertInput,
       prefixes.insert,
+      conflictDoNothing,
     );
     const updateGenerated = generateUpdate(
       db,
@@ -616,7 +636,7 @@ export function generateSchemaData<
       resolve: deleteGenerated.resolver,
     };
     [insertInput, updateInput, tableFilters, tableOrder].forEach(
-      (e) => (inputs[e.name] = e),
+      (e) => { inputs[e.name] = e; },
     );
     outputs[selectSingleOutput.name] = selectSingleOutput;
     outputs[singleTableItemOutput.name] = singleTableItemOutput;

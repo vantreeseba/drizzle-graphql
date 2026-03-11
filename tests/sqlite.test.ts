@@ -10,7 +10,7 @@ import {
 	type UpdateResolver,
 } from '@/index';
 import { type Client, createClient } from '@libsql/client';
-import { Relations, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { type BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import {
@@ -65,8 +65,10 @@ beforeAll(async () => {
 		throw lastError;
 	}
 
-	ctx.db = drizzle(ctx.client, {
+	ctx.db = drizzle({
+		client: ctx.client,
 		schema,
+		relations: schema.relations,
 		logger: process.env['LOG_SQL'] ? true : false,
 	});
 

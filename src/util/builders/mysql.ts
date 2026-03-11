@@ -34,6 +34,7 @@ import {
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   generateTableTypes,
+  type TypeCacheCtx,
 } from '../builders/common.ts';
 import { capitalize, uncapitalize } from '../case-ops/index.ts';
 import {
@@ -103,8 +104,14 @@ const generateSelectArray = (
           ),
           offset,
           limit,
-          orderBy: orderBy ? extractOrderBy(table, orderBy) : undefined,
-          where: where ? extractFilters(table, tableName, where) : undefined,
+          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
+          // use it directly so column refs match the CTE alias.
+          orderBy: orderBy
+            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
+            : undefined,
+          where: where
+            ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) }
+            : undefined,
           with: relationMap[tableName]
             ? extractRelationsParams(
                 relationMap,
@@ -181,8 +188,14 @@ const generateSelectSingle = (
             table,
           ),
           offset,
-          orderBy: orderBy ? extractOrderBy(table, orderBy) : undefined,
-          where: where ? extractFilters(table, tableName, where) : undefined,
+          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
+          // use it directly so column refs match the CTE alias.
+          orderBy: orderBy
+            ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy)
+            : undefined,
+          where: where
+            ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) }
+            : undefined,
           with: relationMap[tableName]
             ? extractRelationsParams(
                 relationMap,
@@ -356,7 +369,7 @@ const generateDelete = (
   table: MySqlTable,
   filterArgs: GraphQLInputObjectType,
 ): CreatedResolver => {
-  const queryName = `deleteFrom${tableName}`;
+  const queryName = `deleteFrom${capitalize(tableName)}`;
 
   const queryArgs = {
     where: {
@@ -396,12 +409,73 @@ const generateDelete = (
   };
 };
 
+/** Shape of the relational config from drizzle-orm v1 db._.relations */
+interface TableRelationalConfig {
+  table: Table;
+  name: string;
+  relations: Record<string, Relation<string>>;
+}
+type TablesRelationalConfig = Record<string, TableRelationalConfig>;
+
+/**
+ * Build namedRelations from drizzle-orm v1 TablesRelationalConfig.
+ *
+ * In drizzle-orm 1.0, db._.relations is a Record where each key is the
+ * schema variable name (e.g. "Users") and the value has { table, name, relations }.
+ * Each relation has a referencedTable property we can match against tableEntries.
+ */
+const buildNamedRelations = (
+  relations: TablesRelationalConfig,
+  tableEntries: [string, Table][],
+): Record<string, Record<string, TableNamedRelations>> => {
+  const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
+
+  for (const [relTableName, relConfig] of Object.entries(relations)) {
+    if (!relConfig?.relations) continue;
+
+    const namedConfig: Record<string, TableNamedRelations> = {};
+
+    for (const [innerRelName, innerRelValue] of Object.entries(relConfig.relations)) {
+      // drizzle-orm v1 uses `targetTable` (not `referencedTable`)
+      // and provides `targetTableName` directly.
+      const targetTable = (innerRelValue as any).targetTable ?? (innerRelValue as any).referencedTable;
+      const directTargetName = (innerRelValue as any).targetTableName as string | undefined;
+
+      let targetTableName: string | undefined;
+
+      if (directTargetName) {
+        // v1: use the direct name to find the schema key
+        const targetEntry = tableEntries.find(([key]) => key === directTargetName);
+        targetTableName = targetEntry?.[0];
+      } else if (targetTable) {
+        // fallback: match by object reference
+        const targetEntry = tableEntries.find(([, tableValue]) => tableValue === targetTable);
+        targetTableName = targetEntry?.[0];
+      }
+
+      if (!targetTableName) continue;
+
+      namedConfig[innerRelName] = {
+        relation: innerRelValue,
+        targetTableName,
+      };
+    }
+
+    if (Object.keys(namedConfig).length > 0) {
+      namedRelations[relTableName] = namedConfig;
+    }
+  }
+
+  return namedRelations;
+};
+
 export const generateSchemaData = <
   TDrizzleInstance extends MySqlDatabase<any, any, any, any>,
   TSchema extends Record<string, Table | unknown>,
 >(
   db: TDrizzleInstance,
   schema: TSchema,
+  relations: TablesRelationalConfig,
   relationsDepthLimit: number | undefined,
   prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
@@ -420,28 +494,16 @@ export const generateSchemaData = <
     );
   }
 
-  // Relations not used in this project; skip relation detection
-  const rawRelations: [string, Record<string, Relation>][] = [];
+  // Build namedRelations from the drizzle-orm v1 relations config.
+  const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
 
-  const namedRelations = Object.fromEntries(
-    rawRelations.map(([relName, config]) => {
-      const namedConfig: Record<string, TableNamedRelations> =
-        Object.fromEntries(
-          Object.entries(config).map(([innerRelName, innerRelValue]) => [
-            innerRelName,
-            {
-              relation: innerRelValue,
-              targetTableName: tableEntries.find(
-                ([tableName, tableValue]) =>
-                  tableValue === innerRelValue.referencedTable,
-              )![0],
-            },
-          ]),
-        );
-
-      return [relName, namedConfig];
-    }),
-  );
+  // Fresh cache per generateSchemaData call — prevents type name collisions
+  // when buildSchema() is called multiple times.
+  const cacheCtx: TypeCacheCtx = {
+    genericFilterCache: new Map(),
+    objectTypeCache: new Map(),
+    relationTypeCache: new Map(),
+  };
 
   const queries: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
   const mutations: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
@@ -454,12 +516,13 @@ export const generateSchemaData = <
         namedRelations,
         false,
         relationsDepthLimit,
+        cacheCtx,
       ),
     ]),
   );
 
   const mutationReturnType = new GraphQLObjectType({
-    name: `MutationReturn`,
+    name: 'MutationReturn',
     fields: {
       isSuccess: {
         type: new GraphQLNonNull(GraphQLBoolean),
@@ -552,7 +615,7 @@ export const generateSchemaData = <
       resolve: deleteGenerated.resolver,
     };
     [insertInput, updateInput, tableFilters, tableOrder].forEach(
-      (e) => (inputs[e.name] = e),
+      (e) => { inputs[e.name] = e; },
     );
     outputs[selectSingleOutput.name] = selectSingleOutput;
   }

@@ -9,9 +9,32 @@ import {
   GraphQLSchema,
   type GraphQLSchemaConfig,
 } from 'graphql';
-import type { ObjMap } from 'graphql/jsutils/ObjMap';
 import type { AnyDrizzleDB, BuildSchemaConfig, GeneratedData } from './types.ts';
 import { generateMySQL, generatePG, generateSQLite } from './util/builders/index.ts';
+
+export type {
+  AnyDrizzleDB,
+  BuildSchemaConfig,
+  DeleteResolver,
+  ExtractRelations,
+  ExtractTableByName,
+  ExtractTableRelations,
+  ExtractTables,
+  GeneratedData,
+  GeneratedEntities,
+  GeneratedInputs,
+  GeneratedOutputs,
+  InsertArrResolver,
+  InsertResolver,
+  MutationReturnlessResult,
+  MutationsCore,
+  QueriesCore,
+  SelectResolver,
+  SelectSingleResolver,
+  UpdateResolver,
+} from './types.ts';
+
+type ObjMap<T> = Record<string, T>;
 
 export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
   db: TDbClient,
@@ -56,11 +79,11 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
 
   let generatorOutput;
   if (is(db, MySqlDatabase)) {
-    generatorOutput = generateMySQL(db, schema, config?.relationsDepthLimit, prefixes, suffixes);
+    generatorOutput = generateMySQL(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
   } else if (is(db, PgAsyncDatabase)) {
-    generatorOutput = generatePG(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
+    generatorOutput = generatePG(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes, config?.conflictDoNothing ?? false);
   } else if (is(db, BaseSQLiteDatabase)) {
-    generatorOutput = generateSQLite(db, schema, config?.relationsDepthLimit, prefixes, suffixes);
+    generatorOutput = generateSQLite(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
   } else throw new Error('Drizzle-GraphQL Error: Unknown database instance type');
 
   const { queries, mutations, inputs, types } = generatorOutput;

@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { buildRelations, createRelationsHelper } from 'drizzle-orm';
 import {
 	bigint,
 	boolean,
@@ -44,29 +44,22 @@ export const Posts = mysqlTable('posts', {
 	authorId: int('author_id'),
 });
 
-export const usersRelations = relations(Users, ({ one, many }) => ({
-	posts: many(Posts),
-	customer: one(Customers, {
-		fields: [Users.id],
-		references: [Customers.userId],
-	}),
-}));
+const r = createRelationsHelper({ Users, Customers, Posts });
 
-export const customersRelations = relations(Customers, ({ one, many }) => ({
-	user: one(Users, {
-		fields: [Customers.userId],
-		references: [Users.id],
-	}),
-	posts: many(Posts),
-}));
-
-export const postsRelations = relations(Posts, ({ one }) => ({
-	author: one(Users, {
-		fields: [Posts.authorId],
-		references: [Users.id],
-	}),
-	customer: one(Customers, {
-		fields: [Posts.authorId],
-		references: [Customers.userId],
-	}),
-}));
+export const relations = buildRelations(
+	{ Users, Customers, Posts },
+	{
+		Users: {
+			posts: r.many.Posts({ from: r.Users.id, to: r.Posts.authorId }),
+			customer: r.one.Customers({ from: r.Users.id, to: r.Customers.userId }),
+		},
+		Customers: {
+			user: r.one.Users({ from: r.Customers.userId, to: r.Users.id }),
+			posts: r.many.Posts({ from: r.Customers.userId, to: r.Posts.authorId }),
+		},
+		Posts: {
+			author: r.one.Users({ from: r.Posts.authorId, to: r.Users.id }),
+			customer: r.one.Customers({ from: r.Posts.authorId, to: r.Customers.userId }),
+		},
+	},
+);
