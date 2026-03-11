@@ -21,7 +21,7 @@
     ".": {
       "import": {
         "types": "./index.d.ts",
-        "default": "./src/index.ts"
+        "default": "./index.js"
       },
       "require": {
         "types": "./index.d.cjs",
