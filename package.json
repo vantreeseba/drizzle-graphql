@@ -17,20 +17,18 @@
     "test-generate-migrations": "DB_TYPE=pg drizzle-kit generate --config=./drizzle.test-config.ts && DB_TYPE=mysql drizzle-kit generate --config=./drizzle.test-config.ts && DB_TYPE=sqlite drizzle-kit generate --config=./drizzle.test-config.ts",
     "lint": "dprint check --list-different"
   },
-	"exports": {
-		".": {
-			"import": {
-				"types": "./index.d.ts",
-				"default": "./index.js"
-			},
-			"require": {
-				"types": "./index.d.cjs",
-				"default": "./index.cjs"
-			},
-			"types": "./index.d.ts",
-			"default": "./index.js"
-		}
-	},
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./src/index.ts"
+      },
+      "require": {
+        "types": "./index.d.cjs",
+        "default": "./index.cjs"
+      }
+    }
+  },
   "license": "Apache-2.0",
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.15.2",
