@@ -46,7 +46,6 @@
     "drizzle-orm": "~1.0.0-beta",
     "get-port": "^7.0.0",
     "glob": "^10.3.10",
-    "graphql": "^16.3.0",
     "graphql-yoga": "^5.1.1",
     "mysql2": "^3.9.2",
     "node-pg": "^1.0.1",
