@@ -56,7 +56,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            usersSingle: z
+            user: z
               .object({
                 args: z
                   .object({
@@ -111,7 +111,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            postsSingle: z
+            post: z
               .object({
                 args: z
                   .object({
@@ -166,7 +166,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            customersSingle: z
+            customer: z
               .object({
                 args: z
                   .object({
@@ -221,7 +221,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            tagsSingle: z
+            tag: z
               .object({
                 args: z
                   .object({
@@ -250,7 +250,7 @@ describe.sequential('Returned data tests', () => {
           .strict(),
         mutations: z
           .object({
-            insertIntoUsers: z
+            createUsers: z
               .object({
                 args: z
                   .object({
@@ -265,7 +265,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoUsersSingle: z
+            createUser: z
               .object({
                 args: z
                   .object({
@@ -300,7 +300,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            deleteFromUsers: z
+            deleteUsers: z
               .object({
                 args: z
                   .object({
@@ -315,7 +315,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoPosts: z
+            createPosts: z
               .object({
                 args: z
                   .object({
@@ -330,7 +330,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoPostsSingle: z
+            createPost: z
               .object({
                 args: z
                   .object({
@@ -365,7 +365,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            deleteFromPosts: z
+            deletePosts: z
               .object({
                 args: z
                   .object({
@@ -380,7 +380,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoCustomers: z
+            createCustomers: z
               .object({
                 args: z
                   .object({
@@ -395,7 +395,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoCustomersSingle: z
+            createCustomer: z
               .object({
                 args: z
                   .object({
@@ -430,7 +430,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            deleteFromCustomers: z
+            deleteCustomers: z
               .object({
                 args: z
                   .object({
@@ -445,7 +445,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoTags: z
+            createTags: z
               .object({
                 args: z
                   .object({
@@ -460,7 +460,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoTagsSingle: z
+            createTag: z
               .object({
                 args: z
                   .object({
@@ -495,7 +495,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            deleteFromTags: z
+            deleteTags: z
               .object({
                 args: z
                   .object({
@@ -514,14 +514,14 @@ describe.sequential('Returned data tests', () => {
           .strict(),
         types: z
           .object({
-            UsersItem: z.instanceof(GraphQLObjectType),
-            UsersSelectItem: z.instanceof(GraphQLObjectType),
-            PostsItem: z.instanceof(GraphQLObjectType),
-            PostsSelectItem: z.instanceof(GraphQLObjectType),
-            CustomersItem: z.instanceof(GraphQLObjectType),
-            CustomersSelectItem: z.instanceof(GraphQLObjectType),
-            TagsItem: z.instanceof(GraphQLObjectType),
-            TagsSelectItem: z.instanceof(GraphQLObjectType),
+            Users: z.instanceof(GraphQLObjectType),
+            Users: z.instanceof(GraphQLObjectType),
+            Posts: z.instanceof(GraphQLObjectType),
+            Posts: z.instanceof(GraphQLObjectType),
+            Customers: z.instanceof(GraphQLObjectType),
+            Customers: z.instanceof(GraphQLObjectType),
+            Tags: z.instanceof(GraphQLObjectType),
+            Tags: z.instanceof(GraphQLObjectType),
           })
           .strict(),
         inputs: z

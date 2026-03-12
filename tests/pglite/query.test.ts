@@ -25,7 +25,7 @@ describe.sequential('Query tests', async () => {
   it(`Select single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				usersSingle {
+				user {
 					a
 					id
 					name
@@ -41,7 +41,7 @@ describe.sequential('Query tests', async () => {
 					isConfirmed
 				}
 
-				postsSingle {
+				post {
 					id
 					authorId
 					content
@@ -51,7 +51,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
+        user: {
           a: [1, 5, 10, 25, 40],
           id: 1,
           name: 'FirstUser',
@@ -66,7 +66,7 @@ describe.sequential('Query tests', async () => {
           initials: 'FU',
           isConfirmed: true,
         },
-        postsSingle: {
+        post: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
@@ -190,7 +190,7 @@ describe.sequential('Query tests', async () => {
   it(`Select single with relations`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				usersSingle {
+				user {
 					a
 					id
 					name
@@ -211,7 +211,7 @@ describe.sequential('Query tests', async () => {
 					}
 				}
 
-				postsSingle {
+				post {
 					id
 					authorId
 					content
@@ -236,7 +236,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
+        user: {
           a: [1, 5, 10, 25, 40],
           id: 1,
           name: 'FirstUser',
@@ -274,7 +274,7 @@ describe.sequential('Query tests', async () => {
             },
           ],
         },
-        postsSingle: {
+        post: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
@@ -558,16 +558,16 @@ describe.sequential('Query tests', async () => {
   it(`Select single by fragment`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			query testQuery {
-				usersSingle {
+				user {
 					...UsersFrag
 				}
 
-				postsSingle {
+				post {
 					...PostsFrag
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -583,7 +583,7 @@ describe.sequential('Query tests', async () => {
 				isConfirmed
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -592,7 +592,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
+        user: {
           a: [1, 5, 10, 25, 40],
           id: 1,
           name: 'FirstUser',
@@ -607,7 +607,7 @@ describe.sequential('Query tests', async () => {
           initials: 'FU',
           isConfirmed: true,
         },
-        postsSingle: {
+        post: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
@@ -628,7 +628,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -644,7 +644,7 @@ describe.sequential('Query tests', async () => {
 				isConfirmed
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -739,16 +739,16 @@ describe.sequential('Query tests', async () => {
   it(`Select single with relations by fragment`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			query testQuery {
-				usersSingle {
+				user {
 					...UsersFrag
 				}
 
-				postsSingle {
+				post {
 					...PostsFrag
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -769,7 +769,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -793,7 +793,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
+        user: {
           a: [1, 5, 10, 25, 40],
           id: 1,
           name: 'FirstUser',
@@ -831,7 +831,7 @@ describe.sequential('Query tests', async () => {
             },
           ],
         },
-        postsSingle: {
+        post: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
@@ -867,7 +867,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -888,7 +888,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -1123,7 +1123,7 @@ describe.sequential('Query tests', async () => {
   it(`Insert single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsersSingle(
+				createUser(
 					values: {
 						a: [1, 5, 10, 25, 40]
 						id: 3
@@ -1158,7 +1158,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsersSingle: {
+        createUser: {
           a: [1, 5, 10, 25, 40],
           id: 3,
           name: 'ThirdUser',
@@ -1180,7 +1180,7 @@ describe.sequential('Query tests', async () => {
   it(`Insert array`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsers(
+				createUsers(
 					values: [
 						{
 							a: [1, 5, 10, 25, 40]
@@ -1232,7 +1232,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsers: [
+        createUsers: [
           {
             a: [1, 5, 10, 25, 40],
             id: 3,
@@ -1306,7 +1306,7 @@ describe.sequential('Query tests', async () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromCustomers {
+				deleteCustomers {
 					id
 					address
 					isConfirmed
@@ -1318,7 +1318,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromCustomers: [
+        deleteCustomers: [
           {
             id: 1,
             address: 'AdOne',

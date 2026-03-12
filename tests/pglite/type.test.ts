@@ -300,15 +300,15 @@ describe.sequential('Type tests', () => {
   it('Types', () => {
     expectTypeOf(ctx.entities.types).toEqualTypeOf<
       {
-        readonly CustomersItem: GraphQLObjectType;
-        readonly PostsItem: GraphQLObjectType;
-        readonly TagsItem: GraphQLObjectType;
-        readonly UsersItem: GraphQLObjectType;
+        readonly Customers: GraphQLObjectType;
+        readonly Posts: GraphQLObjectType;
+        readonly Tags: GraphQLObjectType;
+        readonly Users: GraphQLObjectType;
       } & {
-        readonly CustomersSelectItem: GraphQLObjectType;
-        readonly PostsSelectItem: GraphQLObjectType;
-        readonly TagsSelectItem: GraphQLObjectType;
-        readonly UsersSelectItem: GraphQLObjectType;
+        readonly Customers: GraphQLObjectType;
+        readonly Posts: GraphQLObjectType;
+        readonly Tags: GraphQLObjectType;
+        readonly Users: GraphQLObjectType;
       }
     >();
   });

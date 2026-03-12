@@ -25,7 +25,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Select single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				usersSingle {
+				user {
 					a
 					id
 					name
@@ -42,7 +42,7 @@ describe.sequential('__typename with data tests', async () => {
 					__typename
 				}
 
-				postsSingle {
+				post {
 					id
 					authorId
 					content
@@ -53,7 +53,7 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
+        user: {
           a: [1, 5, 10, 25, 40],
           id: 1,
           name: 'FirstUser',
@@ -67,13 +67,13 @@ describe.sequential('__typename with data tests', async () => {
           profession: 'FirstUserProf',
           initials: 'FU',
           isConfirmed: true,
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
         },
-        postsSingle: {
+        post: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
         },
       },
     });
@@ -125,7 +125,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'FirstUserProf',
             initials: 'FU',
             isConfirmed: true,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
             a: null,
@@ -141,7 +141,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
             a: null,
@@ -157,7 +157,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
         ],
         posts: [
@@ -165,37 +165,37 @@ describe.sequential('__typename with data tests', async () => {
             id: 1,
             authorId: 1,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 2,
             authorId: 1,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 3,
             authorId: 1,
             content: '3MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 4,
             authorId: 5,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 5,
             authorId: 5,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 6,
             authorId: 1,
             content: '4MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
         ],
       },
@@ -205,7 +205,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Select single with relations`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				usersSingle {
+				user {
 					a
 					id
 					name
@@ -228,7 +228,7 @@ describe.sequential('__typename with data tests', async () => {
 					}
 				}
 
-				postsSingle {
+				post {
 					id
 					authorId
 					content
@@ -255,7 +255,7 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
+        user: {
           a: [1, 5, 10, 25, 40],
           id: 1,
           name: 'FirstUser',
@@ -269,40 +269,40 @@ describe.sequential('__typename with data tests', async () => {
           profession: 'FirstUserProf',
           initials: 'FU',
           isConfirmed: true,
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
           posts: [
             {
               id: 1,
               authorId: 1,
               content: '1MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
               id: 2,
               authorId: 1,
               content: '2MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
               id: 3,
               authorId: 1,
               content: '3MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
 
             {
               id: 6,
               authorId: 1,
               content: '4MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
           ],
         },
-        postsSingle: {
+        post: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
           author: {
             a: [1, 5, 10, 25, 40],
             id: 1,
@@ -317,7 +317,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'FirstUserProf',
             initials: 'FU',
             isConfirmed: true,
-            __typename: 'PostsAuthorRelation',
+            __typename: 'Users',
           },
         },
       },
@@ -392,31 +392,31 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'FirstUserProf',
             initials: 'FU',
             isConfirmed: true,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
                 id: 1,
                 authorId: 1,
                 content: '1MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 2,
                 authorId: 1,
                 content: '2MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 3,
                 authorId: 1,
                 content: '3MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 6,
                 authorId: 1,
                 content: '4MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
@@ -434,7 +434,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [],
           },
           {
@@ -451,19 +451,19 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
                 id: 4,
                 authorId: 5,
                 content: '1MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 5,
                 authorId: 5,
                 content: '2MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
@@ -473,7 +473,7 @@ describe.sequential('__typename with data tests', async () => {
             id: 1,
             authorId: 1,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -488,14 +488,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 2,
             authorId: 1,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -510,14 +510,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 3,
             authorId: 1,
             content: '3MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -532,14 +532,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 4,
             authorId: 5,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: null,
               id: 5,
@@ -554,14 +554,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: null,
               initials: null,
               isConfirmed: null,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 5,
             authorId: 5,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: null,
               id: 5,
@@ -576,14 +576,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: null,
               initials: null,
               isConfirmed: null,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 6,
             authorId: 1,
             content: '4MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -598,7 +598,7 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
         ],
@@ -609,7 +609,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Insert single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsersSingle(
+				createUser(
 					values: {
 						a: [1, 5, 10, 25, 40]
 						id: 3
@@ -645,7 +645,7 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsersSingle: {
+        createUser: {
           a: [1, 5, 10, 25, 40],
           id: 3,
           name: 'ThirdUser',
@@ -659,7 +659,7 @@ describe.sequential('__typename with data tests', async () => {
           profession: 'ThirdUserProf',
           initials: 'FU',
           isConfirmed: true,
-          __typename: 'UsersItem',
+          __typename: 'Users',
         },
       },
     });
@@ -668,7 +668,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Insert array`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsers(
+				createUsers(
 					values: [
 						{
 							a: [1, 5, 10, 25, 40]
@@ -721,7 +721,7 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsers: [
+        createUsers: [
           {
             a: [1, 5, 10, 25, 40],
             id: 3,
@@ -736,7 +736,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'ThirdUserProf',
             initials: 'FU',
             isConfirmed: true,
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
           {
             a: [1, 5, 10, 25, 40],
@@ -752,7 +752,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'FourthUserProf',
             initials: 'SU',
             isConfirmed: false,
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
         ],
       },
@@ -782,7 +782,7 @@ describe.sequential('__typename with data tests', async () => {
             isConfirmed: true,
             registrationDate: '2024-03-27T03:54:45.235Z',
             userId: 1,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
             id: 2,
@@ -790,7 +790,7 @@ describe.sequential('__typename with data tests', async () => {
             isConfirmed: true,
             registrationDate: '2024-03-27T03:55:42.358Z',
             userId: 2,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },
@@ -800,7 +800,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromCustomers {
+				deleteCustomers {
 					id
 					address
 					isConfirmed
@@ -813,14 +813,14 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromCustomers: [
+        deleteCustomers: [
           {
             id: 1,
             address: 'AdOne',
             isConfirmed: false,
             registrationDate: '2024-03-27T03:54:45.235Z',
             userId: 1,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
             id: 2,
@@ -828,7 +828,7 @@ describe.sequential('__typename with data tests', async () => {
             isConfirmed: false,
             registrationDate: '2024-03-27T03:55:42.358Z',
             userId: 2,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },

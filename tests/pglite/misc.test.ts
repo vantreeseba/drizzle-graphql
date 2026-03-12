@@ -38,18 +38,18 @@ describe.sequential('Table without relations (Tags)', () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
 				tags { id name description }
-				tagsSingle { id name description }
+				tag { id name description }
 			}
 		`);
 
     expect(res.data.tags).toEqual([{ id: 1, name: 'JavaScript', description: 'JS tag' }]);
-    expect(res.data.tagsSingle).toEqual({ id: 1, name: 'JavaScript', description: 'JS tag' });
+    expect(res.data.tag).toEqual({ id: 1, name: 'JavaScript', description: 'JS tag' });
   });
 
   it('Insert single tag without relations', async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoTagsSingle(values: { name: "TypeScript", description: "TS tag" }) {
+				createTag(values: { name: "TypeScript", description: "TS tag" }) {
 					id
 					name
 					description
@@ -58,14 +58,14 @@ describe.sequential('Table without relations (Tags)', () => {
 		`);
 
     expect(res.errors).toBeUndefined();
-    expect(res.data?.insertIntoTagsSingle?.name).toBe('TypeScript');
-    expect(res.data?.insertIntoTagsSingle?.description).toBe('TS tag');
+    expect(res.data?.createTag?.name).toBe('TypeScript');
+    expect(res.data?.createTag?.description).toBe('TS tag');
   });
 
   it('Insert multiple tags without relations', async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoTags(values: [
+				createTags(values: [
 					{ name: "Go", description: "Go tag" }
 					{ name: "Rust", description: "Rust tag" }
 				]) {
@@ -77,7 +77,7 @@ describe.sequential('Table without relations (Tags)', () => {
 		`);
 
     expect(res.errors).toBeUndefined();
-    expect(res.data?.insertIntoTags).toHaveLength(2);
+    expect(res.data?.createTags).toHaveLength(2);
   });
 });
 
@@ -86,7 +86,7 @@ describe.sequential('Insert conflict behavior (no onConflictDoNothing by default
     // id=1 for Users already exists from beforeEach — inserting it again should error
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsersSingle(values: { id: 1, name: "Duplicate", createdAt: "2024-04-02T06:44:41.785Z" }) {
+				createUser(values: { id: 1, name: "Duplicate", createdAt: "2024-04-02T06:44:41.785Z" }) {
 					id
 					name
 				}

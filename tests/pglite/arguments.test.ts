@@ -77,7 +77,7 @@ describe.sequential('Arguments tests', async () => {
   it('Order by on single', async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				postsSingle(
+				post(
 					orderBy: { authorId: { priority: 1, direction: desc }, content: { priority: 0, direction: asc } }
 				) {
 					id
@@ -89,7 +89,7 @@ describe.sequential('Arguments tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        postsSingle: {
+        post: {
           id: 4,
           authorId: 5,
           content: '1MESSAGE',
@@ -130,7 +130,7 @@ describe.sequential('Arguments tests', async () => {
   it('Offset on single', async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				postsSingle(offset: 1) {
+				post(offset: 1) {
 					id
 					authorId
 					content
@@ -140,7 +140,7 @@ describe.sequential('Arguments tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        postsSingle: {
+        post: {
           id: 2,
           authorId: 1,
           content: '2MESSAGE',
@@ -269,7 +269,7 @@ describe.sequential('Arguments tests', async () => {
   it('Delete filters', async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromPosts(where: { OR: [{ id: { lte: 3 } }, { authorId: { eq: 5 } }] }) {
+				deletePosts(where: { OR: [{ id: { lte: 3 } }, { authorId: { eq: 5 } }] }) {
 					id
 					authorId
 					content
@@ -279,7 +279,7 @@ describe.sequential('Arguments tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromPosts: [
+        deletePosts: [
           {
             id: 1,
             authorId: 1,

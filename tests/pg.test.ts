@@ -931,7 +931,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -953,7 +953,7 @@ describe.sequential('Query tests', async () => {
 				geoTuple
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -1004,7 +1004,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -1026,7 +1026,7 @@ describe.sequential('Query tests', async () => {
 				geoTuple
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -1142,7 +1142,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -1169,7 +1169,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -1285,7 +1285,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				a
 				id
 				name
@@ -1312,7 +1312,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -2802,14 +2802,10 @@ describe.sequential('Returned data tests', () => {
           .strict(),
         types: z
           .object({
-            UsersItem: z.instanceof(GraphQLObjectType),
-            UsersSelectItem: z.instanceof(GraphQLObjectType),
-            PostsItem: z.instanceof(GraphQLObjectType),
-            PostsSelectItem: z.instanceof(GraphQLObjectType),
-            CustomersItem: z.instanceof(GraphQLObjectType),
-            CustomersSelectItem: z.instanceof(GraphQLObjectType),
-            TagsItem: z.instanceof(GraphQLObjectType),
-            TagsSelectItem: z.instanceof(GraphQLObjectType),
+            Users: z.instanceof(GraphQLObjectType),
+            Posts: z.instanceof(GraphQLObjectType),
+            Customers: z.instanceof(GraphQLObjectType),
+            Tags: z.instanceof(GraphQLObjectType),
           })
           .strict(),
         inputs: z
@@ -3057,13 +3053,13 @@ describe.sequential('Type tests', () => {
   it('Types', () => {
     expectTypeOf(ctx.entities.types).toEqualTypeOf<
       {
-        readonly CustomersItem: GraphQLObjectType;
-        readonly PostsItem: GraphQLObjectType;
-        readonly UsersItem: GraphQLObjectType;
+        readonly Customers: GraphQLObjectType;
+        readonly Posts: GraphQLObjectType;
+        readonly Users: GraphQLObjectType;
       } & {
-        readonly CustomersSelectItem: GraphQLObjectType;
-        readonly PostsSelectItem: GraphQLObjectType;
-        readonly UsersSelectItem: GraphQLObjectType;
+        readonly Customers: GraphQLObjectType;
+        readonly Posts: GraphQLObjectType;
+        readonly Users: GraphQLObjectType;
       }
     >();
   });
@@ -3108,10 +3104,10 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         usersSingle: {
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
         },
         postsSingle: {
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
         },
       },
     });
@@ -3134,33 +3130,33 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
         ],
         posts: [
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
         ],
       },
@@ -3189,27 +3185,27 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         usersSingle: {
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
           posts: [
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
 
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
           ],
         },
         postsSingle: {
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
           author: {
-            __typename: 'PostsAuthorRelation',
+            __typename: 'Users',
           },
         },
       },
@@ -3239,73 +3235,73 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [],
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
         ],
         posts: [
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
         ],
@@ -3346,7 +3342,7 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         insertIntoUsersSingle: {
-          __typename: 'UsersItem',
+          __typename: 'Users',
         },
       },
     });
@@ -3403,10 +3399,10 @@ describe.sequential('__typename only tests', async () => {
       data: {
         insertIntoUsers: [
           {
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
         ],
       },
@@ -3426,10 +3422,10 @@ describe.sequential('__typename only tests', async () => {
       data: {
         updateCustomers: [
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },
@@ -3449,10 +3445,10 @@ describe.sequential('__typename only tests', async () => {
       data: {
         deleteFromCustomers: [
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },
@@ -3517,13 +3513,13 @@ describe.sequential('__typename with data tests', async () => {
             y: 20.3,
           },
           geoTuple: [20, 20.3],
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
         },
         postsSingle: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
         },
       },
     });
@@ -3587,7 +3583,7 @@ describe.sequential('__typename with data tests', async () => {
               y: 20.3,
             },
             geoTuple: [20, 20.3],
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
             a: null,
@@ -3606,7 +3602,7 @@ describe.sequential('__typename with data tests', async () => {
             vector: null,
             geoXy: null,
             geoTuple: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
             a: null,
@@ -3625,7 +3621,7 @@ describe.sequential('__typename with data tests', async () => {
             vector: null,
             geoXy: null,
             geoTuple: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
         ],
         posts: [
@@ -3633,37 +3629,37 @@ describe.sequential('__typename with data tests', async () => {
             id: 1,
             authorId: 1,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 2,
             authorId: 1,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 3,
             authorId: 1,
             content: '3MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 4,
             authorId: 5,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 5,
             authorId: 5,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 6,
             authorId: 1,
             content: '4MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
         ],
       },
@@ -3755,32 +3751,32 @@ describe.sequential('__typename with data tests', async () => {
             y: 20.3,
           },
           geoTuple: [20, 20.3],
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
           posts: [
             {
               id: 1,
               authorId: 1,
               content: '1MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
               id: 2,
               authorId: 1,
               content: '2MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
               id: 3,
               authorId: 1,
               content: '3MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
 
             {
               id: 6,
               authorId: 1,
               content: '4MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
           ],
         },
@@ -3788,7 +3784,7 @@ describe.sequential('__typename with data tests', async () => {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
           author: {
             a: [1, 5, 10, 25, 40],
             id: 1,
@@ -3809,7 +3805,7 @@ describe.sequential('__typename with data tests', async () => {
               y: 20.3,
             },
             geoTuple: [20, 20.3],
-            __typename: 'PostsAuthorRelation',
+            __typename: 'Users',
           },
         },
       },
@@ -3902,31 +3898,31 @@ describe.sequential('__typename with data tests', async () => {
               y: 20.3,
             },
             geoTuple: [20, 20.3],
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
                 id: 1,
                 authorId: 1,
                 content: '1MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 2,
                 authorId: 1,
                 content: '2MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 3,
                 authorId: 1,
                 content: '3MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 6,
                 authorId: 1,
                 content: '4MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
@@ -3947,7 +3943,7 @@ describe.sequential('__typename with data tests', async () => {
             vector: null,
             geoXy: null,
             geoTuple: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [],
           },
           {
@@ -3967,19 +3963,19 @@ describe.sequential('__typename with data tests', async () => {
             vector: null,
             geoXy: null,
             geoTuple: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
                 id: 4,
                 authorId: 5,
                 content: '1MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 5,
                 authorId: 5,
                 content: '2MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
@@ -3989,7 +3985,7 @@ describe.sequential('__typename with data tests', async () => {
             id: 1,
             authorId: 1,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -4010,14 +4006,14 @@ describe.sequential('__typename with data tests', async () => {
                 y: 20.3,
               },
               geoTuple: [20, 20.3],
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 2,
             authorId: 1,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -4038,14 +4034,14 @@ describe.sequential('__typename with data tests', async () => {
                 y: 20.3,
               },
               geoTuple: [20, 20.3],
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 3,
             authorId: 1,
             content: '3MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -4066,14 +4062,14 @@ describe.sequential('__typename with data tests', async () => {
                 y: 20.3,
               },
               geoTuple: [20, 20.3],
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 4,
             authorId: 5,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: null,
               id: 5,
@@ -4091,14 +4087,14 @@ describe.sequential('__typename with data tests', async () => {
               vector: null,
               geoXy: null,
               geoTuple: null,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 5,
             authorId: 5,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: null,
               id: 5,
@@ -4116,14 +4112,14 @@ describe.sequential('__typename with data tests', async () => {
               vector: null,
               geoXy: null,
               geoTuple: null,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 6,
             authorId: 1,
             content: '4MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               a: [1, 5, 10, 25, 40],
               id: 1,
@@ -4144,7 +4140,7 @@ describe.sequential('__typename with data tests', async () => {
                 y: 20.3,
               },
               geoTuple: [20, 20.3],
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
         ],
@@ -4223,7 +4219,7 @@ describe.sequential('__typename with data tests', async () => {
             y: 20.3,
           },
           geoTuple: [20, 20.3],
-          __typename: 'UsersItem',
+          __typename: 'Users',
         },
       },
     });
@@ -4318,7 +4314,7 @@ describe.sequential('__typename with data tests', async () => {
               y: 20.3,
             },
             geoTuple: [20, 20.3],
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
           {
             a: [1, 5, 10, 25, 40],
@@ -4337,7 +4333,7 @@ describe.sequential('__typename with data tests', async () => {
             vector: null,
             geoXy: null,
             geoTuple: null,
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
         ],
       },
@@ -4367,7 +4363,7 @@ describe.sequential('__typename with data tests', async () => {
             isConfirmed: true,
             registrationDate: '2024-03-27T03:54:45.235Z',
             userId: 1,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
             id: 2,
@@ -4375,7 +4371,7 @@ describe.sequential('__typename with data tests', async () => {
             isConfirmed: true,
             registrationDate: '2024-03-27T03:55:42.358Z',
             userId: 2,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },
@@ -4405,7 +4401,7 @@ describe.sequential('__typename with data tests', async () => {
             isConfirmed: false,
             registrationDate: '2024-03-27T03:54:45.235Z',
             userId: 1,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
             id: 2,
@@ -4413,7 +4409,7 @@ describe.sequential('__typename with data tests', async () => {
             isConfirmed: false,
             registrationDate: '2024-03-27T03:55:42.358Z',
             userId: 2,
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },

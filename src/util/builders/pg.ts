@@ -25,7 +25,7 @@ import {
   type TablesRelationalConfig,
   type TypeCacheCtx,
 } from '../builders/common.ts';
-import { capitalize, uncapitalize, singularize } from '../case-ops/index.ts';
+import { capitalize, singularize, uncapitalize } from '../case-ops/index.ts';
 import {
   remapFromGraphQLArrayInput,
   remapFromGraphQLSingleInput,
@@ -43,7 +43,6 @@ const generateSelectArray = (
   filterArgs: GraphQLInputObjectType,
   listSuffix: string,
 ): CreatedResolver => {
-
   const queryEntityBase = uncapitalize(tableName);
 
   const queryName = `${queryEntityBase}`;
@@ -67,7 +66,7 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-//   const typeName = `${capitalize(tableName)}SelectItem`;
+  //   const typeName = `${capitalize(tableName)}SelectItem`;
   const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
@@ -139,7 +138,6 @@ const generateSelectSingle = (
   filterArgs: GraphQLInputObjectType,
   singleSuffix: string,
 ): CreatedResolver => {
-
   const queryEntityBase = singularize(uncapitalize(tableName));
   const queryName = `${queryEntityBase}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
@@ -159,7 +157,7 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-//   const typeName = `${capitalize(tableName)}SelectItem`;
+  //   const typeName = `${capitalize(tableName)}SelectItem`;
   const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
@@ -283,10 +281,9 @@ const generateInsertSingle = (
   prefix: string,
   conflictDoNothing: boolean = false,
 ): CreatedResolver => {
-
   const queryEntityBase = singularize(capitalize(tableName));
   const queryName = `${prefix}${queryEntityBase}`;
-//   const queryName = `${prefix}${capitalize(tableName)}Single`;
+  //   const queryName = `${prefix}${capitalize(tableName)}Single`;
   const typeName = `${capitalize(tableName)}`;
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
@@ -342,7 +339,7 @@ const generateUpdate = (
   prefix: string,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-//   const typeName = `${capitalize(tableName)}Item`;
+  //   const typeName = `${capitalize(tableName)}Item`;
   const typeName = `${capitalize(tableName)}`;
 
   const queryArgs = {
@@ -405,7 +402,7 @@ const generateDelete = (
   prefix: string,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-//   const typeName = `${capitalize(tableName)}Item`;
+  //   const typeName = `${capitalize(tableName)}Item`;
   const typeName = `${capitalize(tableName)}`;
 
   const queryArgs = {
@@ -486,6 +483,8 @@ export function generateSchemaData<
   const cacheCtx: TypeCacheCtx = {
     genericFilterCache: new Map(),
     objectTypeCache: new Map(),
+    relationFieldContainers: new Map(),
+    fullyBuiltTables: new Set(),
     relationTypeCache: new Map(),
   };
 

@@ -25,11 +25,11 @@ describe.sequential('__typename only tests', async () => {
   it(`Select single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				usersSingle {
+				user {
 					__typename
 				}
 
-				postsSingle {
+				post {
 					__typename
 				}
 			}
@@ -37,11 +37,11 @@ describe.sequential('__typename only tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
-          __typename: 'UsersSelectItem',
+        user: {
+          __typename: 'Users',
         },
-        postsSingle: {
-          __typename: 'PostsSelectItem',
+        post: {
+          __typename: 'Posts',
         },
       },
     });
@@ -64,33 +64,33 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
         ],
         posts: [
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
         ],
       },
@@ -100,14 +100,14 @@ describe.sequential('__typename only tests', async () => {
   it(`Select single with relations`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			{
-				usersSingle {
+				user {
 					__typename
 					posts {
 						__typename
 					}
 				}
 
-				postsSingle {
+				post {
 					__typename
 					author {
 						__typename
@@ -118,28 +118,28 @@ describe.sequential('__typename only tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        usersSingle: {
-          __typename: 'UsersSelectItem',
+        user: {
+          __typename: 'Users',
           posts: [
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
 
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
           ],
         },
-        postsSingle: {
-          __typename: 'PostsSelectItem',
+        post: {
+          __typename: 'Posts',
           author: {
-            __typename: 'PostsAuthorRelation',
+            __typename: 'Users',
           },
         },
       },
@@ -169,73 +169,73 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [],
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
         ],
         posts: [
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
         ],
@@ -246,7 +246,7 @@ describe.sequential('__typename only tests', async () => {
   it(`Insert single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsersSingle(
+				createUser(
 					values: {
 						a: [1, 5, 10, 25, 40]
 						id: 3
@@ -269,8 +269,8 @@ describe.sequential('__typename only tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsersSingle: {
-          __typename: 'UsersItem',
+        createUser: {
+          __typename: 'Users',
         },
       },
     });
@@ -279,7 +279,7 @@ describe.sequential('__typename only tests', async () => {
   it(`Insert array`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsers(
+				createUsers(
 					values: [
 						{
 							a: [1, 5, 10, 25, 40]
@@ -319,12 +319,12 @@ describe.sequential('__typename only tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsers: [
+        createUsers: [
           {
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersItem',
+            __typename: 'Users',
           },
         ],
       },
@@ -344,10 +344,10 @@ describe.sequential('__typename only tests', async () => {
       data: {
         updateCustomers: [
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },
@@ -357,7 +357,7 @@ describe.sequential('__typename only tests', async () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromCustomers {
+				deleteCustomers {
 					__typename
 				}
 			}
@@ -365,12 +365,12 @@ describe.sequential('__typename only tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromCustomers: [
+        deleteCustomers: [
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
           {
-            __typename: 'CustomersItem',
+            __typename: 'Customers',
           },
         ],
       },

@@ -69,7 +69,7 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
   return {
@@ -141,7 +141,7 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
   return {
@@ -191,7 +191,7 @@ const generateInsertArray = (
   baseType: GraphQLInputObjectType,
 ): CreatedResolver => {
   const queryName = `insertInto${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -239,7 +239,7 @@ const generateInsertSingle = (
   baseType: GraphQLInputObjectType,
 ): CreatedResolver => {
   const queryName = `insertInto${capitalize(tableName)}Single`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -288,7 +288,7 @@ const generateUpdate = (
   filterArgs: GraphQLInputObjectType,
 ): CreatedResolver => {
   const queryName = `update${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs = {
     set: {
@@ -349,7 +349,7 @@ const generateDelete = (
   filterArgs: GraphQLInputObjectType,
 ): CreatedResolver => {
   const queryName = `deleteFrom${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs = {
     where: {
@@ -426,6 +426,8 @@ export const generateSchemaData = <
   const cacheCtx: TypeCacheCtx = {
     genericFilterCache: new Map(),
     objectTypeCache: new Map(),
+    relationFieldContainers: new Map(),
+    fullyBuiltTables: new Set(),
     relationTypeCache: new Map(),
   };
 

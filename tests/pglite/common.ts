@@ -41,7 +41,9 @@ export const setupServer = async (ctx: Context, port: number, dataDir: string): 
     logger: !!process.env.LOG_SQL,
   });
 
-  const { schema: gqlSchema, entities } = buildSchema(ctx.db);
+  const { schema: gqlSchema, entities } = buildSchema(ctx.db, {
+    prefixes: { insert: 'create', delete: 'delete' },
+  });
   const yoga = createYoga({ schema: gqlSchema });
   const server = createServer(yoga);
 
@@ -81,7 +83,9 @@ export const setupMinimal = async (ctx: MinimalContext, dataDir: string): Promis
     logger: !!process.env['LOG_SQL'],
   });
 
-  const { schema: gqlSchema, entities } = buildSchema(ctx.db);
+  const { schema: gqlSchema, entities } = buildSchema(ctx.db, {
+    prefixes: { insert: 'create', delete: 'delete' },
+  });
 
   ctx.schema = gqlSchema;
   ctx.entities = entities;

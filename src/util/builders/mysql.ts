@@ -67,7 +67,7 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
   return {
@@ -139,7 +139,7 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
   return {
@@ -441,6 +441,8 @@ export const generateSchemaData = <
   const cacheCtx: TypeCacheCtx = {
     genericFilterCache: new Map(),
     objectTypeCache: new Map(),
+    relationFieldContainers: new Map(),
+    fullyBuiltTables: new Set(),
     relationTypeCache: new Map(),
   };
 

@@ -795,7 +795,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				id
 				name
 				email
@@ -811,7 +811,7 @@ describe.sequential('Query tests', async () => {
 				isConfirmed
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -856,7 +856,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				id
 				name
 				email
@@ -872,7 +872,7 @@ describe.sequential('Query tests', async () => {
 				isConfirmed
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -976,7 +976,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 			
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				id
 				name
 				email
@@ -997,7 +997,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -1095,7 +1095,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 			
-			fragment UsersFrag on UsersSelectItem {
+			fragment UsersFrag on Users {
 				id
 				name
 				email
@@ -1116,7 +1116,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on PostsSelectItem {
+			fragment PostsFrag on Posts {
 				id
 				authorId
 				content
@@ -3109,9 +3109,9 @@ describe.sequential('Returned data tests', () => {
           .strict(),
         types: z
           .object({
-            UsersSelectItem: z.instanceof(GraphQLObjectType),
-            PostsSelectItem: z.instanceof(GraphQLObjectType),
-            CustomersSelectItem: z.instanceof(GraphQLObjectType),
+            Users: z.instanceof(GraphQLObjectType),
+            Posts: z.instanceof(GraphQLObjectType),
+            Customers: z.instanceof(GraphQLObjectType),
             MutationReturn: z.instanceof(GraphQLObjectType),
           })
           .strict(),
@@ -3358,9 +3358,9 @@ describe.sequential('Type tests', () => {
       {
         MutationReturn: GraphQLObjectType;
       } & {
-        readonly CustomersSelectItem: GraphQLObjectType;
-        readonly PostsSelectItem: GraphQLObjectType;
-        readonly UsersSelectItem: GraphQLObjectType;
+        readonly Customers: GraphQLObjectType;
+        readonly Posts: GraphQLObjectType;
+        readonly Users: GraphQLObjectType;
       }
     >();
   });
@@ -3405,10 +3405,10 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         usersSingle: {
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
         },
         postsSingle: {
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
         },
       },
     });
@@ -3431,33 +3431,33 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
         ],
         posts: [
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
         ],
       },
@@ -3486,26 +3486,26 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         usersSingle: {
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
           posts: [
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
           ],
         },
         postsSingle: {
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
           author: {
-            __typename: 'PostsAuthorRelation',
+            __typename: 'Users',
           },
         },
       },
@@ -3535,73 +3535,73 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [],
           },
           {
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
         ],
         posts: [
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
         ],
@@ -3856,13 +3856,13 @@ describe.sequential('__typename with data tests', async () => {
           profession: 'FirstUserProf',
           initials: 'FU',
           isConfirmed: true,
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
         },
         postsSingle: {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
         },
       },
     });
@@ -3914,7 +3914,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'FirstUserProf',
             initials: 'FU',
             isConfirmed: true,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
             id: 2,
@@ -3930,7 +3930,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
           {
             id: 5,
@@ -3946,7 +3946,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
           },
         ],
         posts: [
@@ -3954,37 +3954,37 @@ describe.sequential('__typename with data tests', async () => {
             id: 1,
             authorId: 1,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 2,
             authorId: 1,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 3,
             authorId: 1,
             content: '3MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 4,
             authorId: 5,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 5,
             authorId: 5,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
           {
             id: 6,
             authorId: 1,
             content: '4MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
           },
         ],
       },
@@ -4058,31 +4058,31 @@ describe.sequential('__typename with data tests', async () => {
           profession: 'FirstUserProf',
           initials: 'FU',
           isConfirmed: true,
-          __typename: 'UsersSelectItem',
+          __typename: 'Users',
           posts: [
             {
               id: 1,
               authorId: 1,
               content: '1MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
               id: 2,
               authorId: 1,
               content: '2MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
               id: 3,
               authorId: 1,
               content: '3MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
             {
               id: 6,
               authorId: 1,
               content: '4MESSAGE',
-              __typename: 'UsersPostsRelation',
+              __typename: 'Posts',
             },
           ],
         },
@@ -4090,7 +4090,7 @@ describe.sequential('__typename with data tests', async () => {
           id: 1,
           authorId: 1,
           content: '1MESSAGE',
-          __typename: 'PostsSelectItem',
+          __typename: 'Posts',
           author: {
             id: 1,
             name: 'FirstUser',
@@ -4105,7 +4105,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'FirstUserProf',
             initials: 'FU',
             isConfirmed: true,
-            __typename: 'PostsAuthorRelation',
+            __typename: 'Users',
           },
         },
       },
@@ -4180,31 +4180,31 @@ describe.sequential('__typename with data tests', async () => {
             profession: 'FirstUserProf',
             initials: 'FU',
             isConfirmed: true,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
                 id: 1,
                 authorId: 1,
                 content: '1MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 2,
                 authorId: 1,
                 content: '2MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 3,
                 authorId: 1,
                 content: '3MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 6,
                 authorId: 1,
                 content: '4MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
@@ -4222,7 +4222,7 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [],
           },
           {
@@ -4239,19 +4239,19 @@ describe.sequential('__typename with data tests', async () => {
             profession: null,
             initials: null,
             isConfirmed: null,
-            __typename: 'UsersSelectItem',
+            __typename: 'Users',
             posts: [
               {
                 id: 4,
                 authorId: 5,
                 content: '1MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
               {
                 id: 5,
                 authorId: 5,
                 content: '2MESSAGE',
-                __typename: 'UsersPostsRelation',
+                __typename: 'Posts',
               },
             ],
           },
@@ -4261,7 +4261,7 @@ describe.sequential('__typename with data tests', async () => {
             id: 1,
             authorId: 1,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               id: 1,
               name: 'FirstUser',
@@ -4276,14 +4276,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 2,
             authorId: 1,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               id: 1,
               name: 'FirstUser',
@@ -4298,14 +4298,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 3,
             authorId: 1,
             content: '3MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               id: 1,
               name: 'FirstUser',
@@ -4320,14 +4320,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 4,
             authorId: 5,
             content: '1MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               id: 5,
               name: 'FifthUser',
@@ -4342,14 +4342,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: null,
               initials: null,
               isConfirmed: null,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 5,
             authorId: 5,
             content: '2MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               id: 5,
               name: 'FifthUser',
@@ -4364,14 +4364,14 @@ describe.sequential('__typename with data tests', async () => {
               profession: null,
               initials: null,
               isConfirmed: null,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
           {
             id: 6,
             authorId: 1,
             content: '4MESSAGE',
-            __typename: 'PostsSelectItem',
+            __typename: 'Posts',
             author: {
               id: 1,
               name: 'FirstUser',
@@ -4386,7 +4386,7 @@ describe.sequential('__typename with data tests', async () => {
               profession: 'FirstUserProf',
               initials: 'FU',
               isConfirmed: true,
-              __typename: 'PostsAuthorRelation',
+              __typename: 'Users',
             },
           },
         ],

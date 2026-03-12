@@ -5,10 +5,10 @@
 //    types (IdFilter, StringFilter, DateTimeFilter, BooleanFilter, per-enum)
 //    instead of one type per (table, column) pair.
 //
-// 2. Type naming follows upstream drizzle-graphql convention:
-//    - Select types: ${capitalize(tableName)}SelectItem (e.g. UsersSelectItem)
-//    - Relation types: ${capitalize(fromTable)}${capitalize(relName)}Relation
-//    - Mutation return: ${capitalize(tableName)}Item
+// 2. Type naming:
+//    - Select types: ${capitalize(tableName)} (e.g. Users)
+//    - Relation fields: reference the target table's type directly (e.g. posts: [Posts!]!)
+//    - Mutation return: same type as select (${capitalize(tableName)})
 //    - Insert input: ${capitalize(tableName)}InsertInput
 //    - Update input: ${capitalize(tableName)}UpdateInput
 // =============================================================================
@@ -148,12 +148,27 @@ export interface TypeCacheCtx {
   genericFilterCache: Map<string, { main: GraphQLInputObjectType; or: GraphQLInputObjectType }>;
   /**
    * Cache of shared select object types, keyed by table name.
-   * Value: the ${capitalize(tableName)}SelectItem type.
+   * Value: the ${capitalize(tableName)} type (columns + relation fields).
+   * A table may be pre-registered here as a columns-only shell before its root call runs.
+   * Use fullyBuiltTables to distinguish a complete type from a pre-registered shell.
    */
   objectTypeCache: Map<string, GraphQLObjectType>;
   /**
+   * Mutable containers for relation fields, keyed by table name.
+   * Each container object is closed over by the corresponding GraphQLObjectType thunk so that
+   * when the root call for a table populates its relation fields, the thunk automatically picks
+   * them up — even if the shell was pre-registered by a different table's relation traversal.
+   */
+  relationFieldContainers: Map<string, { fields: Record<string, ConvertedRelationColumnWithArgs> }>;
+  /**
+   * Set of table names whose GraphQL object type has been fully built (root call completed).
+   * Pre-registered shells (created when another table references this table as a relation target)
+   * are NOT in this set until the root call for that table runs.
+   */
+  fullyBuiltTables: Set<string>;
+  /**
    * Cache of relation types, keyed by "${fromTableName}::${relName}".
-   * Value: the ${capitalize(fromTableName)}${capitalize(relName)}Relation type.
+   * @deprecated No longer used — relation fields now reference the target table's own type directly.
    */
   relationTypeCache: Map<string, GraphQLObjectType>;
 }
@@ -462,8 +477,9 @@ const generateTableFilterTypeCached = (table: Table, tableName: string, cacheCtx
 /**
  * Build the select fields for a table.
  * Creates:
- * - Main select type: ${capitalize(tableName)}SelectItem (e.g. UsersSelectItem)
- * - Relation field types: ${capitalize(fromTable)}${capitalize(relName)}Relation
+ * - Main select type: ${capitalize(tableName)} (e.g. Users)
+ * - Relation fields reference the target table's own type directly (e.g. posts: [Posts!]!)
+ *   rather than creating intermediate relation types.
  *
  * The function is called recursively for relation targets.
  * Cycle detection: usedTables tracks tables currently being processed in the call stack.
@@ -504,8 +520,8 @@ const generateSelectFields = <TWithOrder extends boolean>(
   // For recursive calls, this builds the relation type.
   const isRootCall = fromTableName === '' && fromRelationName === '';
 
-  // If the root type is already fully cached, return early.
-  if (isRootCall && cacheCtx.objectTypeCache.has(tableName)) {
+  // If the root type has already been fully built (not just pre-registered as a shell), return early.
+  if (isRootCall && cacheCtx.fullyBuiltTables.has(tableName)) {
     return {
       order,
       filters,
@@ -514,15 +530,23 @@ const generateSelectFields = <TWithOrder extends boolean>(
     } as SelectData<TWithOrder>;
   }
 
-  let relationFields: Record<string, ConvertedRelationColumnWithArgs> = {};
+  // Obtain or create the mutable relation-fields container for this table.
+  // The container is a plain object whose `fields` property the GraphQLObjectType thunk reads.
+  // Pre-registering it here (before recursion) allows sibling relation traversals to reference
+  // the same single GraphQLObjectType instance even when it hasn't been fully built yet.
+  let container = cacheCtx.relationFieldContainers.get(tableName);
+  if (!container) {
+    container = { fields: {} };
+    cacheCtx.relationFieldContainers.set(tableName, container);
+  }
 
-  if (isRootCall) {
-//     const typeName = `${capitalize(tableName)}SelectItem`;
+  if (isRootCall && !cacheCtx.objectTypeCache.has(tableName)) {
     const typeName = `${capitalize(tableName)}`;
     // Pre-register shell with thunk BEFORE recursing to break circular refs.
+    // The thunk reads container.fields, which will be populated after recursion completes.
     const shell = new GraphQLObjectType({
       name: typeName,
-      fields: () => ({ ...tableFields, ...relationFields }),
+      fields: () => ({ ...tableFields, ...container!.fields }),
     });
     cacheCtx.objectTypeCache.set(tableName, shell);
   }
@@ -555,17 +579,31 @@ const generateSelectFields = <TWithOrder extends boolean>(
         nextUsedTables,
       );
 
-      // Get or create the relation type.
-      const relCacheKey = `${tableName}::${relationName}`;
-      const relTypeName = `${capitalize(tableName)}${capitalize(relationName)}Relation`;
-
-      let relType = cacheCtx.relationTypeCache.get(relCacheKey);
+      // Use the target table's own GraphQL type directly instead of creating an intermediate relation type.
+      // Ensure exactly one GraphQLObjectType instance exists for the target table.
+      // If the root call for the target table has already run (or pre-registered a shell),
+      // reuse that instance so the schema never contains duplicate type names.
+      let relType = cacheCtx.objectTypeCache.get(targetTableName);
       if (!relType) {
+        // The target table hasn't been processed yet. Pre-register a shell so that:
+        //   (a) this relation field has a concrete type reference, and
+        //   (b) when the target table's root call eventually runs, it reuses this same object.
+        const targetTable = tables[targetTableName]!;
+        const targetTableFields = generateTableSelectTypeFieldsCached(targetTable, targetTableName);
+        // Get or create a container for the target table's relation fields.
+        let targetContainer = cacheCtx.relationFieldContainers.get(targetTableName);
+        if (!targetContainer) {
+          targetContainer = { fields: {} };
+          cacheCtx.relationFieldContainers.set(targetTableName, targetContainer);
+        }
+        const capturedTargetContainer = targetContainer;
+        // The thunk reads capturedTargetContainer.fields so that when the target table's root
+        // call populates the container, the shell automatically includes those relation fields.
         relType = new GraphQLObjectType({
-          name: relTypeName,
-          fields: { ...relSelectData.tableFields, ...relSelectData.relationFields },
+          name: `${capitalize(targetTableName)}`,
+          fields: () => ({ ...targetTableFields, ...capturedTargetContainer.fields }),
         });
-        cacheCtx.relationTypeCache.set(relCacheKey, relType);
+        cacheCtx.objectTypeCache.set(targetTableName, relType);
       }
 
       if (isOne) {
@@ -595,15 +633,35 @@ const generateSelectFields = <TWithOrder extends boolean>(
       ]);
     }
 
-    // Assign into the pre-declared variable — the thunk above will see this value.
-    relationFields = Object.fromEntries(rawRelationFields);
+    const builtRelationFields = Object.fromEntries(rawRelationFields);
+
+    // Only the root call should populate the container — non-root calls are temporary traversals
+    // to collect filters/order for args and should not overwrite the canonical relation fields.
+    if (isRootCall) {
+      // Populate the container so that the thunk on the GraphQLObjectType shell (whether it was
+      // created here or pre-registered by another table's relation traversal) picks up the fields.
+      container.fields = builtRelationFields;
+      cacheCtx.fullyBuiltTables.add(tableName);
+    }
+
+    return {
+      order,
+      filters,
+      tableFields,
+      relationFields: builtRelationFields,
+    } as SelectData<TWithOrder>;
+  }
+
+  // No relation entries — mark as fully built if root call.
+  if (isRootCall) {
+    cacheCtx.fullyBuiltTables.add(tableName);
   }
 
   return {
     order,
     filters,
     tableFields,
-    relationFields,
+    relationFields: {},
   } as SelectData<TWithOrder>;
 };
 
@@ -662,7 +720,7 @@ export const generateTableTypes = <WithReturning extends boolean>(
   const selectSingleOutput =
     cacheCtx.objectTypeCache.get(tableName) ??
     new GraphQLObjectType({
-//       name: `${capitalize(tableName)}SelectItem`,
+      //       name: `${capitalize(tableName)}SelectItem`,
       name: `${capitalize(tableName)}`,
       fields: { ...tableFields, ...relationFields },
     });
@@ -670,17 +728,17 @@ export const generateTableTypes = <WithReturning extends boolean>(
   const selectArrOutput = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput)));
 
   // Mutation return type: ${capitalize(tableName)}Item (table columns only, no relations)
-//   const singleTableItemOutput = withReturning
-//     ? new GraphQLObjectType({
-//         name: `${capitalize(tableName)}`,
-// //         name: `${capitalize(tableName)}Item`,
-//         fields: tableFields,
-//       })
-//     : undefined;
+  //   const singleTableItemOutput = withReturning
+  //     ? new GraphQLObjectType({
+  //         name: `${capitalize(tableName)}`,
+  // //         name: `${capitalize(tableName)}Item`,
+  //         fields: tableFields,
+  //       })
+  //     : undefined;
 
   const arrTableItemOutput = withReturning
-//     ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)))
-    ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput!)))
+    ? //     ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)))
+      new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput!)))
     : undefined;
 
   const inputs = {
@@ -696,7 +754,7 @@ export const generateTableTypes = <WithReturning extends boolean>(
           selectSingleOutput,
           selectArrOutput,
           singleTableItemOutput: selectSingleOutput!,
-//           singleTableItemOutput: singleTableItemOutput!,
+          //           singleTableItemOutput: singleTableItemOutput!,
           arrTableItemOutput: arrTableItemOutput!,
         }
       : {
@@ -891,8 +949,8 @@ const extractRelationsParamsInner = (
   const args: Record<string, Partial<ProcessedTableSelectArgs>> = {};
 
   for (const [relName, { targetTableName }] of Object.entries(relationsForTable)) {
-    // The relation type name: ${capitalize(tableName)}${capitalize(relName)}Relation
-    const relTypeName = `${capitalize(tableName)}${capitalize(relName)}Relation`;
+    // The relation field resolves to the target table's own type, e.g. "Posts" not "UsersPostsRelation".
+    const relTypeName = `${capitalize(targetTableName)}`;
     // Look up by field name OR by alias (when the caller uses an alias for the relation).
     // graphql-parse-resolve-info keys fieldsByTypeName entries by alias.
     const field = baseField[relName] ?? Object.values(baseField).find((f) => (f as ResolveTree).name === relName);
