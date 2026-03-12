@@ -502,7 +502,17 @@ export function generateSchemaData<
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx, singularTypes),
+      generateTableTypes(
+        tableName,
+        tables,
+        namedRelations,
+        true,
+        relationsDepthLimit,
+        cacheCtx,
+        singularTypes,
+        prefixes.insert,
+        prefixes.update,
+      ),
     ]),
   );
 

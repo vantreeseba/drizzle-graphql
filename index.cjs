@@ -767,7 +767,7 @@ var generateSelectFields = (tables, tableName, relationMap, fromTableName, fromR
     relationFields: {}
   };
 };
-var generateTableTypes = (tableName, tables, relationMap, withReturning, relationsDepthLimit, cacheCtx, singularTypes = false) => {
+var generateTableTypes = (tableName, tables, relationMap, withReturning, relationsDepthLimit, cacheCtx, singularTypes = false, insertPrefix = "insertInto", updatePrefix = "update") => {
   const { tableFields, relationFields, filters, order } = generateSelectFields(
     tables,
     tableName,
@@ -798,11 +798,11 @@ var generateTableTypes = (tableName, tables, relationMap, withReturning, relatio
     ])
   );
   const insertInput = new import_graphql3.GraphQLInputObjectType({
-    name: `${toTypeName(tableName, singularTypes)}InsertInput`,
+    name: `${capitalize(insertPrefix)}${toTypeName(tableName, singularTypes)}Input`,
     fields: insertFields
   });
   const updateInput = new import_graphql3.GraphQLInputObjectType({
-    name: `${toTypeName(tableName, singularTypes)}UpdateInput`,
+    name: `${capitalize(updatePrefix)}${toTypeName(tableName, singularTypes)}Input`,
     fields: updateFields
   });
   const selectSingleOutput = cacheCtx.objectTypeCache.get(tableName) ?? new import_graphql3.GraphQLObjectType({
@@ -1253,7 +1253,7 @@ var buildNamedRelations2 = (relations, tableEntries) => {
   }
   return namedRelations;
 };
-var generateSchemaData = (db, schema, relations, relationsDepthLimit, _prefixes, suffixes, singularTypes = false) => {
+var generateSchemaData = (db, schema, relations, relationsDepthLimit, prefixes, suffixes, singularTypes = false) => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
   const tableEntries = schemaEntries.filter(([_key, value]) => (0, import_drizzle_orm4.is)(value, import_mysql_core2.MySqlTable));
@@ -1276,7 +1276,17 @@ var generateSchemaData = (db, schema, relations, relationsDepthLimit, _prefixes,
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, false, relationsDepthLimit, cacheCtx, singularTypes)
+      generateTableTypes(
+        tableName,
+        tables,
+        namedRelations,
+        false,
+        relationsDepthLimit,
+        cacheCtx,
+        singularTypes,
+        prefixes.insert,
+        prefixes.update
+      )
     ])
   );
   const mutationReturnType = new import_graphql4.GraphQLObjectType({
@@ -1680,7 +1690,17 @@ function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixe
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx, singularTypes)
+      generateTableTypes(
+        tableName,
+        tables,
+        namedRelations,
+        true,
+        relationsDepthLimit,
+        cacheCtx,
+        singularTypes,
+        prefixes.insert,
+        prefixes.update
+      )
     ])
   );
   const inputs = {};
@@ -2048,7 +2068,7 @@ var generateDelete3 = (db, tableName, table, filterArgs, singularTypes = false) 
     args: queryArgs
   };
 };
-var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, _prefixes, suffixes, singularTypes = false) => {
+var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, prefixes, suffixes, singularTypes = false) => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
   const tableEntries = schemaEntries.filter(([_key, value]) => (0, import_drizzle_orm6.is)(value, import_sqlite_core2.SQLiteTable));
@@ -2071,7 +2091,17 @@ var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, _prefixes
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx, singularTypes)
+      generateTableTypes(
+        tableName,
+        tables,
+        namedRelations,
+        true,
+        relationsDepthLimit,
+        cacheCtx,
+        singularTypes,
+        prefixes.insert,
+        prefixes.update
+      )
     ])
   );
   const inputs = {};

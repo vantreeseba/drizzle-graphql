@@ -425,7 +425,7 @@ export const generateSchemaData = <
   schema: TSchema,
   relations: TablesRelationalConfig,
   relationsDepthLimit: number | undefined,
-  _prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
+  prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
   singularTypes: boolean = false,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
@@ -459,7 +459,17 @@ export const generateSchemaData = <
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, false, relationsDepthLimit, cacheCtx, singularTypes),
+      generateTableTypes(
+        tableName,
+        tables,
+        namedRelations,
+        false,
+        relationsDepthLimit,
+        cacheCtx,
+        singularTypes,
+        prefixes.insert,
+        prefixes.update,
+      ),
     ]),
   );
 

@@ -9,8 +9,8 @@
 //    - Select types: ${capitalize(tableName)} (e.g. Users)
 //    - Relation fields: reference the target table's type directly (e.g. posts: [Posts!]!)
 //    - Mutation return: same type as select (${capitalize(tableName)})
-//    - Insert input: ${capitalize(tableName)}InsertInput
-//    - Update input: ${capitalize(tableName)}UpdateInput
+//    - Insert input: ${capitalize(insertPrefix)}${toTypeName(tableName)}Input (e.g. CreateUsersInput)
+//    - Update input: ${capitalize(updatePrefix)}${toTypeName(tableName)}Input (e.g. UpdateUsersInput)
 // =============================================================================
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
 import type { Column, Relation, Table } from 'drizzle-orm';
@@ -684,6 +684,8 @@ export const generateTableTypes = <WithReturning extends boolean>(
   relationsDepthLimit: number | undefined,
   cacheCtx: TypeCacheCtx,
   singularTypes: boolean = false,
+  insertPrefix: string = 'insertInto',
+  updatePrefix: string = 'update',
 ): GeneratedTableTypes<WithReturning> => {
   const { tableFields, relationFields, filters, order } = generateSelectFields(
     tables,
@@ -717,14 +719,14 @@ export const generateTableTypes = <WithReturning extends boolean>(
     ]),
   );
 
-  // Insert/update input types: ${toTypeName(tableName)}InsertInput / ${toTypeName(tableName)}UpdateInput
+  // Insert/update input types: ${capitalize(insertPrefix)}${toTypeName(tableName)}Input / ${capitalize(updatePrefix)}${toTypeName(tableName)}Input
   const insertInput = new GraphQLInputObjectType({
-    name: `${toTypeName(tableName, singularTypes)}InsertInput`,
+    name: `${capitalize(insertPrefix)}${toTypeName(tableName, singularTypes)}Input`,
     fields: insertFields,
   });
 
   const updateInput = new GraphQLInputObjectType({
-    name: `${toTypeName(tableName, singularTypes)}UpdateInput`,
+    name: `${capitalize(updatePrefix)}${toTypeName(tableName, singularTypes)}Input`,
     fields: updateFields,
   });
 

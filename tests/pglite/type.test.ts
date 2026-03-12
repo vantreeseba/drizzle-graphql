@@ -326,15 +326,15 @@ describe.sequential('Type tests', () => {
         readonly PostsOrderBy: GraphQLInputObjectType;
         readonly TagsOrderBy: GraphQLInputObjectType;
       } & {
-        readonly UsersInsertInput: GraphQLInputObjectType;
-        readonly CustomersInsertInput: GraphQLInputObjectType;
-        readonly PostsInsertInput: GraphQLInputObjectType;
-        readonly TagsInsertInput: GraphQLInputObjectType;
+        readonly CreateUsersInput: GraphQLInputObjectType;
+        readonly CreateCustomersInput: GraphQLInputObjectType;
+        readonly CreatePostsInput: GraphQLInputObjectType;
+        readonly CreateTagsInput: GraphQLInputObjectType;
       } & {
-        readonly UsersUpdateInput: GraphQLInputObjectType;
-        readonly CustomersUpdateInput: GraphQLInputObjectType;
-        readonly PostsUpdateInput: GraphQLInputObjectType;
-        readonly TagsUpdateInput: GraphQLInputObjectType;
+        readonly UpdateUsersInput: GraphQLInputObjectType;
+        readonly UpdateCustomersInput: GraphQLInputObjectType;
+        readonly UpdatePostsInput: GraphQLInputObjectType;
+        readonly UpdateTagsInput: GraphQLInputObjectType;
       }
     >();
   });

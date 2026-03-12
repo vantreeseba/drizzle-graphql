@@ -3119,16 +3119,16 @@ describe.sequential('Returned data tests', () => {
           .object({
             UsersFilters: z.instanceof(GraphQLInputObjectType),
             UsersOrderBy: z.instanceof(GraphQLInputObjectType),
-            UsersInsertInput: z.instanceof(GraphQLInputObjectType),
-            UsersUpdateInput: z.instanceof(GraphQLInputObjectType),
+            InsertIntoUsersInput: z.instanceof(GraphQLInputObjectType),
+            UpdateUsersInput: z.instanceof(GraphQLInputObjectType),
             PostsFilters: z.instanceof(GraphQLInputObjectType),
             PostsOrderBy: z.instanceof(GraphQLInputObjectType),
-            PostsInsertInput: z.instanceof(GraphQLInputObjectType),
-            PostsUpdateInput: z.instanceof(GraphQLInputObjectType),
+            InsertIntoPostsInput: z.instanceof(GraphQLInputObjectType),
+            UpdatePostsInput: z.instanceof(GraphQLInputObjectType),
             CustomersFilters: z.instanceof(GraphQLInputObjectType),
             CustomersOrderBy: z.instanceof(GraphQLInputObjectType),
-            CustomersInsertInput: z.instanceof(GraphQLInputObjectType),
-            CustomersUpdateInput: z.instanceof(GraphQLInputObjectType),
+            InsertIntoCustomersInput: z.instanceof(GraphQLInputObjectType),
+            UpdateCustomersInput: z.instanceof(GraphQLInputObjectType),
           })
           .strict(),
       })
@@ -3376,13 +3376,13 @@ describe.sequential('Type tests', () => {
         readonly CustomersOrderBy: GraphQLInputObjectType;
         readonly PostsOrderBy: GraphQLInputObjectType;
       } & {
-        readonly UsersInsertInput: GraphQLInputObjectType;
-        readonly CustomersInsertInput: GraphQLInputObjectType;
-        readonly PostsInsertInput: GraphQLInputObjectType;
+        readonly InsertIntoUsersInput: GraphQLInputObjectType;
+        readonly InsertIntoCustomersInput: GraphQLInputObjectType;
+        readonly InsertIntoPostsInput: GraphQLInputObjectType;
       } & {
-        readonly UsersUpdateInput: GraphQLInputObjectType;
-        readonly CustomersUpdateInput: GraphQLInputObjectType;
-        readonly PostsUpdateInput: GraphQLInputObjectType;
+        readonly UpdateUsersInput: GraphQLInputObjectType;
+        readonly UpdateCustomersInput: GraphQLInputObjectType;
+        readonly UpdatePostsInput: GraphQLInputObjectType;
       }
     >();
   });
