@@ -397,6 +397,7 @@ var drizzleColumnToGraphQLType = (column, columnName, tableName, forceNullable =
 
 // src/util/builders/common.ts
 var rqbCrashTypes = ["SQLiteBigInt", "SQLiteBlobJson", "SQLiteBlobBuffer"];
+var toTypeName = (name, singular) => singular ? capitalize(singularize(name)) : capitalize(name);
 var buildNamedRelations = (relations, tableEntries) => {
   const namedRelations = {};
   for (const [relTableName, relConfig] of Object.entries(relations)) {
@@ -607,33 +608,33 @@ var generateTableSelectTypeFieldsCached = (table, tableName) => {
   return remapped;
 };
 var orderTypeMap = /* @__PURE__ */ new WeakMap();
-var generateTableOrderTypeCached = (table, tableName) => {
+var generateTableOrderTypeCached = (table, tableName, singularTypes) => {
   if (orderTypeMap.has(table)) {
     return orderTypeMap.get(table);
   }
   const orderColumns = generateTableOrderCached(table);
   const order = new import_graphql3.GraphQLInputObjectType({
-    name: `${capitalize(tableName)}OrderBy`,
+    name: `${toTypeName(tableName, singularTypes)}OrderBy`,
     fields: orderColumns
   });
   orderTypeMap.set(table, order);
   return order;
 };
 var filterTypeMap = /* @__PURE__ */ new WeakMap();
-var generateTableFilterTypeCached = (table, tableName, cacheCtx) => {
+var generateTableFilterTypeCached = (table, tableName, cacheCtx, singularTypes) => {
   if (filterTypeMap.has(table)) {
     return filterTypeMap.get(table);
   }
   const filterColumns = generateTableFilterValuesCached(table, tableName, cacheCtx);
   const filters = new import_graphql3.GraphQLInputObjectType({
-    name: `${capitalize(tableName)}Filters`,
+    name: `${toTypeName(tableName, singularTypes)}Filters`,
     fields: {
       ...filterColumns,
       OR: {
         type: new import_graphql3.GraphQLList(
           new import_graphql3.GraphQLNonNull(
             new import_graphql3.GraphQLInputObjectType({
-              name: `${capitalize(tableName)}FiltersOr`,
+              name: `${toTypeName(tableName, singularTypes)}FiltersOr`,
               fields: filterColumns
             })
           )
@@ -644,10 +645,10 @@ var generateTableFilterTypeCached = (table, tableName, cacheCtx) => {
   filterTypeMap.set(table, filters);
   return filters;
 };
-var generateSelectFields = (tables, tableName, relationMap, fromTableName, fromRelationName, withOrder, _relationsDepthLimit, cacheCtx, usedTables = /* @__PURE__ */ new Set()) => {
+var generateSelectFields = (tables, tableName, relationMap, fromTableName, fromRelationName, withOrder, _relationsDepthLimit, cacheCtx, singularTypes, usedTables = /* @__PURE__ */ new Set()) => {
   const table = tables[tableName];
-  const order = withOrder ? generateTableOrderTypeCached(table, tableName) : void 0;
-  const filters = generateTableFilterTypeCached(table, tableName, cacheCtx);
+  const order = withOrder ? generateTableOrderTypeCached(table, tableName, singularTypes) : void 0;
+  const filters = generateTableFilterTypeCached(table, tableName, cacheCtx, singularTypes);
   const tableFields = generateTableSelectTypeFieldsCached(table, tableName);
   const relationsForTable = relationMap[tableName];
   const relationEntries = relationsForTable ? Object.entries(relationsForTable) : [];
@@ -674,7 +675,7 @@ var generateSelectFields = (tables, tableName, relationMap, fromTableName, fromR
     cacheCtx.relationFieldContainers.set(tableName, container);
   }
   if (isRootCall && !cacheCtx.objectTypeCache.has(tableName)) {
-    const typeName = `${capitalize(tableName)}`;
+    const typeName = toTypeName(tableName, singularTypes);
     const shell = new import_graphql3.GraphQLObjectType({
       name: typeName,
       fields: () => ({ ...tableFields, ...container.fields })
@@ -700,6 +701,7 @@ var generateSelectFields = (tables, tableName, relationMap, fromTableName, fromR
         !isOne,
         void 0,
         cacheCtx,
+        singularTypes,
         nextUsedTables
       );
       let relType = cacheCtx.objectTypeCache.get(targetTableName);
@@ -713,7 +715,7 @@ var generateSelectFields = (tables, tableName, relationMap, fromTableName, fromR
         }
         const capturedTargetContainer = targetContainer;
         relType = new import_graphql3.GraphQLObjectType({
-          name: `${capitalize(targetTableName)}`,
+          name: toTypeName(targetTableName, singularTypes),
           fields: () => ({ ...targetTableFields, ...capturedTargetContainer.fields })
         });
         cacheCtx.objectTypeCache.set(targetTableName, relType);
@@ -765,7 +767,7 @@ var generateSelectFields = (tables, tableName, relationMap, fromTableName, fromR
     relationFields: {}
   };
 };
-var generateTableTypes = (tableName, tables, relationMap, withReturning, relationsDepthLimit, cacheCtx) => {
+var generateTableTypes = (tableName, tables, relationMap, withReturning, relationsDepthLimit, cacheCtx, singularTypes = false) => {
   const { tableFields, relationFields, filters, order } = generateSelectFields(
     tables,
     tableName,
@@ -776,7 +778,8 @@ var generateTableTypes = (tableName, tables, relationMap, withReturning, relatio
     // root call: no fromRelationName
     true,
     relationsDepthLimit,
-    cacheCtx
+    cacheCtx,
+    singularTypes
   );
   const table = tables[tableName];
   const columns = (0, import_drizzle_orm3.getColumns)(table);
@@ -795,16 +798,15 @@ var generateTableTypes = (tableName, tables, relationMap, withReturning, relatio
     ])
   );
   const insertInput = new import_graphql3.GraphQLInputObjectType({
-    name: `${capitalize(tableName)}InsertInput`,
+    name: `${toTypeName(tableName, singularTypes)}InsertInput`,
     fields: insertFields
   });
   const updateInput = new import_graphql3.GraphQLInputObjectType({
-    name: `${capitalize(tableName)}UpdateInput`,
+    name: `${toTypeName(tableName, singularTypes)}UpdateInput`,
     fields: updateFields
   });
   const selectSingleOutput = cacheCtx.objectTypeCache.get(tableName) ?? new import_graphql3.GraphQLObjectType({
-    //       name: `${capitalize(tableName)}SelectItem`,
-    name: `${capitalize(tableName)}`,
+    name: toTypeName(tableName, singularTypes),
     fields: { ...tableFields, ...relationFields }
   });
   const selectArrOutput = new import_graphql3.GraphQLNonNull(new import_graphql3.GraphQLList(new import_graphql3.GraphQLNonNull(selectSingleOutput)));
@@ -948,7 +950,7 @@ var extractFilters = (table, tableName, filters) => {
   }
   return variants.length ? variants.length > 1 ? (0, import_drizzle_orm3.and)(...variants) : variants[0] : void 0;
 };
-var extractRelationsParamsInner = (relationMap, tables, tableName, typeName, originField, _isInitial = false) => {
+var extractRelationsParamsInner = (relationMap, tables, tableName, typeName, originField, singularTypes = false, _isInitial = false) => {
   const relationsForTable = relationMap[tableName];
   if (!relationsForTable) {
     return void 0;
@@ -959,7 +961,7 @@ var extractRelationsParamsInner = (relationMap, tables, tableName, typeName, ori
   }
   const args = {};
   for (const [relName, { targetTableName }] of Object.entries(relationsForTable)) {
-    const relTypeName = `${capitalize(targetTableName)}`;
+    const relTypeName = toTypeName(targetTableName, singularTypes);
     const field = baseField[relName] ?? Object.values(baseField).find((f) => f.name === relName);
     if (!field) {
       continue;
@@ -981,21 +983,22 @@ var extractRelationsParamsInner = (relationMap, tables, tableName, typeName, ori
     thisRecord.orderBy = relationArgs?.orderBy ? (aliasedTable) => extractOrderBy(aliasedTable, relationArgs.orderBy) : void 0;
     thisRecord.offset = offset;
     thisRecord.limit = limit;
-    const relWith = relationField ? extractRelationsParamsInner(relationMap, tables, targetTableName, relTypeName, relationField) : void 0;
+    const relWith = relationField ? extractRelationsParamsInner(relationMap, tables, targetTableName, relTypeName, relationField, singularTypes) : void 0;
     thisRecord.with = relWith;
     args[relName] = thisRecord;
   }
   return args;
 };
-var extractRelationsParams = (relationMap, tables, tableName, info, typeName) => {
+var extractRelationsParams = (relationMap, tables, tableName, info, typeName, singularTypes = false) => {
   if (!info) {
     return void 0;
   }
-  return extractRelationsParamsInner(relationMap, tables, tableName, typeName, info, true);
+  return extractRelationsParamsInner(relationMap, tables, tableName, typeName, info, singularTypes, true);
 };
 
 // src/util/builders/mysql.ts
-var generateSelectArray = (db, tableName, tables, relationMap, orderArgs, filterArgs, listSuffix) => {
+var toTypeName2 = (name, singular) => singular ? capitalize(singularize(name)) : capitalize(name);
+var generateSelectArray = (db, tableName, tables, relationMap, orderArgs, filterArgs, listSuffix, singularTypes) => {
   const queryName = `${uncapitalize(tableName)}${listSuffix}`;
   const queryBase = db.query[tableName];
   if (!queryBase) {
@@ -1017,7 +1020,7 @@ var generateSelectArray = (db, tableName, tables, relationMap, orderArgs, filter
       type: filterArgs
     }
   };
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName2(tableName, singularTypes);
   const table = tables[tableName];
   return {
     name: queryName,
@@ -1035,7 +1038,7 @@ var generateSelectArray = (db, tableName, tables, relationMap, orderArgs, filter
           // use it directly so column refs match the CTE alias.
           orderBy: orderBy ? (aliasedTable) => extractOrderBy(aliasedTable, orderBy) : void 0,
           where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : void 0,
-          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName) : void 0
+          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes) : void 0
         });
         const result = await query;
         return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
@@ -1049,7 +1052,7 @@ var generateSelectArray = (db, tableName, tables, relationMap, orderArgs, filter
     args: queryArgs
   };
 };
-var generateSelectSingle = (db, tableName, tables, relationMap, orderArgs, filterArgs, singleSuffix) => {
+var generateSelectSingle = (db, tableName, tables, relationMap, orderArgs, filterArgs, singleSuffix, singularTypes) => {
   const queryName = `${uncapitalize(tableName)}${singleSuffix}`;
   const queryBase = db.query[tableName];
   if (!queryBase) {
@@ -1068,7 +1071,7 @@ var generateSelectSingle = (db, tableName, tables, relationMap, orderArgs, filte
       type: filterArgs
     }
   };
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName2(tableName, singularTypes);
   const table = tables[tableName];
   return {
     name: queryName,
@@ -1085,7 +1088,7 @@ var generateSelectSingle = (db, tableName, tables, relationMap, orderArgs, filte
           // use it directly so column refs match the CTE alias.
           orderBy: orderBy ? (aliasedTable) => extractOrderBy(aliasedTable, orderBy) : void 0,
           where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : void 0,
-          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName) : void 0
+          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes) : void 0
         });
         const result = await query;
         if (!result) {
@@ -1250,7 +1253,7 @@ var buildNamedRelations2 = (relations, tableEntries) => {
   }
   return namedRelations;
 };
-var generateSchemaData = (db, schema, relations, relationsDepthLimit, _prefixes, suffixes) => {
+var generateSchemaData = (db, schema, relations, relationsDepthLimit, _prefixes, suffixes, singularTypes = false) => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
   const tableEntries = schemaEntries.filter(([_key, value]) => (0, import_drizzle_orm4.is)(value, import_mysql_core2.MySqlTable));
@@ -1273,7 +1276,7 @@ var generateSchemaData = (db, schema, relations, relationsDepthLimit, _prefixes,
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, false, relationsDepthLimit, cacheCtx)
+      generateTableTypes(tableName, tables, namedRelations, false, relationsDepthLimit, cacheCtx, singularTypes)
     ])
   );
   const mutationReturnType = new import_graphql4.GraphQLObjectType({
@@ -1298,7 +1301,8 @@ var generateSchemaData = (db, schema, relations, relationsDepthLimit, _prefixes,
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.list
+      suffixes.list,
+      singularTypes
     );
     const selectSingleGenerated = generateSelectSingle(
       db,
@@ -1307,7 +1311,8 @@ var generateSchemaData = (db, schema, relations, relationsDepthLimit, _prefixes,
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.single
+      suffixes.single,
+      singularTypes
     );
     const insertArrGenerated = generateInsertArray(db, tableName, schema[tableName], insertInput);
     const insertSingleGenerated = generateInsertSingle(db, tableName, schema[tableName], insertInput);
@@ -1356,7 +1361,8 @@ var import_drizzle_orm5 = require("drizzle-orm");
 var import_pg_core2 = require("drizzle-orm/pg-core");
 var import_graphql5 = require("graphql");
 var import_graphql_parse_resolve_info2 = require("graphql-parse-resolve-info");
-var generateSelectArray2 = (db, tableName, tables, relationMap, orderArgs, filterArgs, listSuffix) => {
+var toTypeName3 = (name, singular) => singular ? capitalize(singularize(name)) : capitalize(name);
+var generateSelectArray2 = (db, tableName, tables, relationMap, orderArgs, filterArgs, listSuffix, singularTypes) => {
   const queryEntityBase = uncapitalize(tableName);
   const queryName = `${queryEntityBase}`;
   const queryBase = db.query[tableName];
@@ -1374,7 +1380,7 @@ var generateSelectArray2 = (db, tableName, tables, relationMap, orderArgs, filte
       type: filterArgs
     }
   };
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName3(tableName, singularTypes);
   const table = tables[tableName];
   return {
     name: queryName,
@@ -1387,7 +1393,7 @@ var generateSelectArray2 = (db, tableName, tables, relationMap, orderArgs, filte
         const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName], table);
         let result;
         if (queryBase) {
-          const withParams = relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName) : void 0;
+          const withParams = relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes) : void 0;
           result = await queryBase.findMany({
             columns: selectedColumns,
             offset,
@@ -1425,7 +1431,7 @@ var generateSelectArray2 = (db, tableName, tables, relationMap, orderArgs, filte
     args: queryArgs
   };
 };
-var generateSelectSingle2 = (db, tableName, tables, relationMap, orderArgs, filterArgs, singleSuffix) => {
+var generateSelectSingle2 = (db, tableName, tables, relationMap, orderArgs, filterArgs, singleSuffix, singularTypes) => {
   const queryEntityBase = singularize(uncapitalize(tableName));
   const queryName = `${queryEntityBase}`;
   const queryBase = db.query[tableName];
@@ -1440,7 +1446,7 @@ var generateSelectSingle2 = (db, tableName, tables, relationMap, orderArgs, filt
       type: filterArgs
     }
   };
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName3(tableName, singularTypes);
   const table = tables[tableName];
   return {
     name: queryName,
@@ -1460,7 +1466,7 @@ var generateSelectSingle2 = (db, tableName, tables, relationMap, orderArgs, filt
             // d0, d1) — use it directly so column refs match the CTE alias.
             orderBy: orderBy ? (aliasedTable) => extractOrderBy(aliasedTable, orderBy) : void 0,
             where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : void 0,
-            with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName) : void 0
+            with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes) : void 0
           });
         } else {
           let q = db.select(selectedColumns).from(table);
@@ -1490,9 +1496,9 @@ var generateSelectSingle2 = (db, tableName, tables, relationMap, orderArgs, filt
     args: queryArgs
   };
 };
-var generateInsertArray2 = (db, tableName, table, baseType, prefix, conflictDoNothing = false) => {
+var generateInsertArray2 = (db, tableName, table, baseType, prefix, conflictDoNothing = false, singularTypes = false) => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName3(tableName, singularTypes);
   const queryArgs = {
     values: {
       type: new import_graphql5.GraphQLNonNull(new import_graphql5.GraphQLList(new import_graphql5.GraphQLNonNull(baseType)))
@@ -1529,10 +1535,10 @@ var generateInsertArray2 = (db, tableName, table, baseType, prefix, conflictDoNo
     args: queryArgs
   };
 };
-var generateInsertSingle2 = (db, tableName, table, baseType, prefix, conflictDoNothing = false) => {
+var generateInsertSingle2 = (db, tableName, table, baseType, prefix, conflictDoNothing = false, singularTypes = false) => {
   const queryEntityBase = singularize(capitalize(tableName));
   const queryName = `${prefix}${queryEntityBase}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName3(tableName, singularTypes);
   const queryArgs = {
     values: {
       type: new import_graphql5.GraphQLNonNull(baseType)
@@ -1569,9 +1575,9 @@ var generateInsertSingle2 = (db, tableName, table, baseType, prefix, conflictDoN
     args: queryArgs
   };
 };
-var generateUpdate2 = (db, tableName, table, setArgs, filterArgs, prefix) => {
+var generateUpdate2 = (db, tableName, table, setArgs, filterArgs, prefix, singularTypes = false) => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName3(tableName, singularTypes);
   const queryArgs = {
     set: {
       type: new import_graphql5.GraphQLNonNull(setArgs)
@@ -1614,9 +1620,9 @@ var generateUpdate2 = (db, tableName, table, setArgs, filterArgs, prefix) => {
     args: queryArgs
   };
 };
-var generateDelete2 = (db, tableName, table, filterArgs, prefix) => {
+var generateDelete2 = (db, tableName, table, filterArgs, prefix, singularTypes = false) => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName3(tableName, singularTypes);
   const queryArgs = {
     where: {
       type: filterArgs
@@ -1652,7 +1658,7 @@ var generateDelete2 = (db, tableName, table, filterArgs, prefix) => {
     args: queryArgs
   };
 };
-function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixes, suffixes, conflictDoNothing = false) {
+function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixes, suffixes, conflictDoNothing = false, singularTypes = false) {
   const schemaEntries = Object.entries(schema);
   const tableEntries = schemaEntries.filter(([_key, value]) => (0, import_drizzle_orm5.is)(value, import_pg_core2.PgTable));
   const tables = Object.fromEntries(tableEntries);
@@ -1674,7 +1680,7 @@ function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixe
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx)
+      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx, singularTypes)
     ])
   );
   const inputs = {};
@@ -1689,7 +1695,8 @@ function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixe
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.list
+      suffixes.list,
+      singularTypes
     );
     const selectSingleGenerated = generateSelectSingle2(
       db,
@@ -1698,7 +1705,8 @@ function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixe
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.single
+      suffixes.single,
+      singularTypes
     );
     const insertArrGenerated = generateInsertArray2(
       db,
@@ -1706,7 +1714,8 @@ function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixe
       schema[tableName],
       insertInput,
       prefixes.insert,
-      conflictDoNothing
+      conflictDoNothing,
+      singularTypes
     );
     const insertSingleGenerated = generateInsertSingle2(
       db,
@@ -1714,7 +1723,8 @@ function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixe
       schema[tableName],
       insertInput,
       prefixes.insert,
-      conflictDoNothing
+      conflictDoNothing,
+      singularTypes
     );
     const updateGenerated = generateUpdate2(
       db,
@@ -1722,9 +1732,17 @@ function generateSchemaData2(db, schema, relations, relationsDepthLimit, prefixe
       schema[tableName],
       updateInput,
       tableFilters,
-      prefixes.update
+      prefixes.update,
+      singularTypes
     );
-    const deleteGenerated = generateDelete2(db, tableName, schema[tableName], tableFilters, prefixes.delete);
+    const deleteGenerated = generateDelete2(
+      db,
+      tableName,
+      schema[tableName],
+      tableFilters,
+      prefixes.delete,
+      singularTypes
+    );
     queries[selectArrGenerated.name] = {
       type: selectArrOutput,
       args: selectArrGenerated.args,
@@ -1769,7 +1787,8 @@ var import_drizzle_orm6 = require("drizzle-orm");
 var import_sqlite_core2 = require("drizzle-orm/sqlite-core");
 var import_graphql6 = require("graphql");
 var import_graphql_parse_resolve_info3 = require("graphql-parse-resolve-info");
-var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, _listSuffix) => {
+var toTypeName4 = (name, singular) => singular ? capitalize(singularize(name)) : capitalize(name);
+var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, _listSuffix, singularTypes) => {
   const queryName = `${uncapitalize(tableName)}`;
   const queryBase = db.query[tableName];
   if (!queryBase) {
@@ -1791,7 +1810,7 @@ var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filte
       type: filterArgs
     }
   };
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName4(tableName, singularTypes);
   const table = tables[tableName];
   return {
     name: queryName,
@@ -1809,7 +1828,7 @@ var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filte
           // use it directly so column refs match the CTE alias.
           orderBy: orderBy ? (aliasedTable) => extractOrderBy(aliasedTable, orderBy) : void 0,
           where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : void 0,
-          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName) : void 0
+          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes) : void 0
         });
         const result = await query;
         return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
@@ -1823,7 +1842,7 @@ var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filte
     args: queryArgs
   };
 };
-var generateSelectSingle3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, _singleSuffix) => {
+var generateSelectSingle3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, _singleSuffix, singularTypes) => {
   const queryName = `${uncapitalize(tableName)}Single`;
   const queryBase = db.query[tableName];
   if (!queryBase) {
@@ -1842,7 +1861,7 @@ var generateSelectSingle3 = (db, tableName, tables, relationMap, orderArgs, filt
       type: filterArgs
     }
   };
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName4(tableName, singularTypes);
   const table = tables[tableName];
   return {
     name: queryName,
@@ -1859,7 +1878,7 @@ var generateSelectSingle3 = (db, tableName, tables, relationMap, orderArgs, filt
           // use it directly so column refs match the CTE alias.
           orderBy: orderBy ? (aliasedTable) => extractOrderBy(aliasedTable, orderBy) : void 0,
           where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : void 0,
-          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName) : void 0
+          with: relationMap[tableName] ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes) : void 0
         });
         const result = await query;
         if (!result) {
@@ -1876,9 +1895,9 @@ var generateSelectSingle3 = (db, tableName, tables, relationMap, orderArgs, filt
     args: queryArgs
   };
 };
-var generateInsertArray3 = (db, tableName, table, baseType) => {
+var generateInsertArray3 = (db, tableName, table, baseType, singularTypes = false) => {
   const queryName = `insertInto${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName4(tableName, singularTypes);
   const queryArgs = {
     values: {
       type: new import_graphql6.GraphQLNonNull(new import_graphql6.GraphQLList(new import_graphql6.GraphQLNonNull(baseType)))
@@ -1911,9 +1930,9 @@ var generateInsertArray3 = (db, tableName, table, baseType) => {
     args: queryArgs
   };
 };
-var generateInsertSingle3 = (db, tableName, table, baseType) => {
+var generateInsertSingle3 = (db, tableName, table, baseType, singularTypes = false) => {
   const queryName = `insertInto${capitalize(tableName)}Single`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName4(tableName, singularTypes);
   const queryArgs = {
     values: {
       type: new import_graphql6.GraphQLNonNull(baseType)
@@ -1946,9 +1965,9 @@ var generateInsertSingle3 = (db, tableName, table, baseType) => {
     args: queryArgs
   };
 };
-var generateUpdate3 = (db, tableName, table, setArgs, filterArgs) => {
+var generateUpdate3 = (db, tableName, table, setArgs, filterArgs, singularTypes = false) => {
   const queryName = `update${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName4(tableName, singularTypes);
   const queryArgs = {
     set: {
       type: new import_graphql6.GraphQLNonNull(setArgs)
@@ -1991,9 +2010,9 @@ var generateUpdate3 = (db, tableName, table, setArgs, filterArgs) => {
     args: queryArgs
   };
 };
-var generateDelete3 = (db, tableName, table, filterArgs) => {
+var generateDelete3 = (db, tableName, table, filterArgs, singularTypes = false) => {
   const queryName = `deleteFrom${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}`;
+  const typeName = toTypeName4(tableName, singularTypes);
   const queryArgs = {
     where: {
       type: filterArgs
@@ -2029,7 +2048,7 @@ var generateDelete3 = (db, tableName, table, filterArgs) => {
     args: queryArgs
   };
 };
-var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, _prefixes, suffixes) => {
+var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, _prefixes, suffixes, singularTypes = false) => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
   const tableEntries = schemaEntries.filter(([_key, value]) => (0, import_drizzle_orm6.is)(value, import_sqlite_core2.SQLiteTable));
@@ -2052,7 +2071,7 @@ var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, _prefixes
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx)
+      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx, singularTypes)
     ])
   );
   const inputs = {};
@@ -2067,7 +2086,8 @@ var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, _prefixes
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.list
+      suffixes.list,
+      singularTypes
     );
     const selectSingleGenerated = generateSelectSingle3(
       db,
@@ -2076,12 +2096,38 @@ var generateSchemaData3 = (db, schema, relations, relationsDepthLimit, _prefixes
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.single
+      suffixes.single,
+      singularTypes
     );
-    const insertArrGenerated = generateInsertArray3(db, tableName, schema[tableName], insertInput);
-    const insertSingleGenerated = generateInsertSingle3(db, tableName, schema[tableName], insertInput);
-    const updateGenerated = generateUpdate3(db, tableName, schema[tableName], updateInput, tableFilters);
-    const deleteGenerated = generateDelete3(db, tableName, schema[tableName], tableFilters);
+    const insertArrGenerated = generateInsertArray3(
+      db,
+      tableName,
+      schema[tableName],
+      insertInput,
+      singularTypes
+    );
+    const insertSingleGenerated = generateInsertSingle3(
+      db,
+      tableName,
+      schema[tableName],
+      insertInput,
+      singularTypes
+    );
+    const updateGenerated = generateUpdate3(
+      db,
+      tableName,
+      schema[tableName],
+      updateInput,
+      tableFilters,
+      singularTypes
+    );
+    const deleteGenerated = generateDelete3(
+      db,
+      tableName,
+      schema[tableName],
+      tableFilters,
+      singularTypes
+    );
     queries[selectArrGenerated.name] = {
       type: selectArrOutput,
       args: selectArrGenerated.args,
@@ -2139,6 +2185,7 @@ var buildSchema = (db, config) => {
     list: config?.suffixes?.list ?? "",
     single: config?.suffixes?.single ?? "Single"
   };
+  const singularTypes = config?.singularTypes ?? false;
   if (typeof config?.relationsDepthLimit === "number") {
     if (config.relationsDepthLimit < 0) {
       throw new Error(
@@ -2158,7 +2205,15 @@ var buildSchema = (db, config) => {
   }
   let generatorOutput;
   if ((0, import_drizzle_orm7.is)(db, import_mysql_core3.MySqlDatabase)) {
-    generatorOutput = generateSchemaData(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
+    generatorOutput = generateSchemaData(
+      db,
+      schema,
+      relations,
+      config?.relationsDepthLimit,
+      prefixes,
+      suffixes,
+      singularTypes
+    );
   } else if ((0, import_drizzle_orm7.is)(db, import_pg_core3.PgAsyncDatabase)) {
     generatorOutput = generateSchemaData2(
       db,
@@ -2167,10 +2222,19 @@ var buildSchema = (db, config) => {
       config?.relationsDepthLimit,
       prefixes,
       suffixes,
-      config?.conflictDoNothing ?? false
+      config?.conflictDoNothing ?? false,
+      singularTypes
     );
   } else if ((0, import_drizzle_orm7.is)(db, import_sqlite_core3.BaseSQLiteDatabase)) {
-    generatorOutput = generateSchemaData3(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
+    generatorOutput = generateSchemaData3(
+      db,
+      schema,
+      relations,
+      config?.relationsDepthLimit,
+      prefixes,
+      suffixes,
+      singularTypes
+    );
   } else {
     throw new Error("Drizzle-GraphQL Error: Unknown database instance type");
   }

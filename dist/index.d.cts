@@ -274,6 +274,13 @@ type BuildSchemaConfig = {
      * ignore duplicate key violations. Defaults to false (conflicts throw errors).
      */
     conflictDoNothing?: boolean;
+    /**
+     * When true, all generated GraphQL object type names will use the singular form
+     * of the table name (e.g. `users` table → `User` type instead of `Users`).
+     *
+     * Defaults to false.
+     */
+    singularTypes?: boolean;
 };
 
 declare const buildSchema: <TDbClient extends AnyDrizzleDB<any>>(db: TDbClient, config?: BuildSchemaConfig) => GeneratedData<TDbClient>;
