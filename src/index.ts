@@ -60,6 +60,8 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
     single: config?.suffixes?.single ?? 'Single',
   };
 
+  const singularTypes = config?.singularTypes ?? false;
+
   if (typeof config?.relationsDepthLimit === 'number') {
     if (config.relationsDepthLimit < 0) {
       throw new Error(
@@ -80,7 +82,15 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
 
   let generatorOutput;
   if (is(db, MySqlDatabase)) {
-    generatorOutput = generateMySQL(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
+    generatorOutput = generateMySQL(
+      db,
+      schema,
+      relations,
+      config?.relationsDepthLimit,
+      prefixes,
+      suffixes,
+      singularTypes,
+    );
   } else if (is(db, PgAsyncDatabase)) {
     generatorOutput = generatePG(
       db,
@@ -90,9 +100,18 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
       prefixes,
       suffixes,
       config?.conflictDoNothing ?? false,
+      singularTypes,
     );
   } else if (is(db, BaseSQLiteDatabase)) {
-    generatorOutput = generateSQLite(db, schema, relations, config?.relationsDepthLimit, prefixes, suffixes);
+    generatorOutput = generateSQLite(
+      db,
+      schema,
+      relations,
+      config?.relationsDepthLimit,
+      prefixes,
+      suffixes,
+      singularTypes,
+    );
   } else {
     throw new Error('Drizzle-GraphQL Error: Unknown database instance type');
   }
