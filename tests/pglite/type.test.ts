@@ -1,0 +1,341 @@
+import type { Relations } from 'drizzle-orm';
+import type {
+  GraphQLInputObjectType,
+  GraphQLList,
+  GraphQLNonNull,
+  GraphQLObjectType,
+  GraphQLScalarType,
+  GraphQLSchema,
+} from 'graphql';
+import { afterAll, beforeAll, describe, expectTypeOf, it } from 'vitest';
+import {
+  buildSchema,
+  type DeleteResolver,
+  type ExtractTables,
+  type GeneratedEntities,
+  type InsertArrResolver,
+  type InsertResolver,
+  type SelectResolver,
+  type SelectSingleResolver,
+  type UpdateResolver,
+} from '@/index';
+import type * as schema from '../schema/pg';
+import { createMinimalCtx, type MinimalContext, setupMinimal, teardownMinimal } from './common';
+
+const DATA_DIR = `./tests/.temp/pgdata-type-${Date.now()}`;
+
+const ctx: MinimalContext = createMinimalCtx();
+
+beforeAll(async () => {
+  await setupMinimal(ctx, DATA_DIR);
+});
+
+afterAll(async () => {
+  await teardownMinimal(ctx, DATA_DIR);
+});
+
+describe.sequential('Type tests', () => {
+  it('Schema', () => {
+    expectTypeOf(ctx.schema).toEqualTypeOf<GraphQLSchema>();
+  });
+
+  it('Queries', () => {
+    expectTypeOf(ctx.entities.queries).toEqualTypeOf<
+      {
+        readonly customers: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            limit: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectResolver<
+            typeof schema.Customers,
+            ExtractTables<typeof schema>,
+            typeof schema.customersRelations extends Relations<any, infer RelConf> ? RelConf : never
+          >;
+        };
+        readonly posts: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            limit: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectResolver<
+            typeof schema.Posts,
+            ExtractTables<typeof schema>,
+            typeof schema.postsRelations extends Relations<any, infer RelConf> ? RelConf : never
+          >;
+        };
+        readonly tags: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            limit: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectResolver<typeof schema.Tags, ExtractTables<typeof schema>, never>;
+        };
+        readonly users: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            limit: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectResolver<
+            typeof schema.Users,
+            ExtractTables<typeof schema>,
+            typeof schema.usersRelations extends Relations<any, infer RelConf> ? RelConf : never
+          >;
+        };
+      } & {
+        readonly customersSingle: {
+          type: GraphQLObjectType;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectSingleResolver<
+            typeof schema.Customers,
+            ExtractTables<typeof schema>,
+            typeof schema.customersRelations extends Relations<any, infer RelConf> ? RelConf : never
+          >;
+        };
+        readonly postsSingle: {
+          type: GraphQLObjectType;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectSingleResolver<
+            typeof schema.Posts,
+            ExtractTables<typeof schema>,
+            typeof schema.postsRelations extends Relations<any, infer RelConf> ? RelConf : never
+          >;
+        };
+        readonly tagsSingle: {
+          type: GraphQLObjectType;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectSingleResolver<typeof schema.Tags, ExtractTables<typeof schema>, never>;
+        };
+        readonly usersSingle: {
+          type: GraphQLObjectType;
+          args: {
+            orderBy: { type: GraphQLInputObjectType };
+            offset: { type: GraphQLScalarType<number, number> };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: SelectSingleResolver<
+            typeof schema.Users,
+            ExtractTables<typeof schema>,
+            typeof schema.usersRelations extends Relations<any, infer RelConf> ? RelConf : never
+          >;
+        };
+      }
+    >();
+  });
+
+  it('Mutations', () => {
+    expectTypeOf(ctx.entities.mutations).toEqualTypeOf<
+      {
+        readonly insertIntoCustomers: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLInputObjectType>>>;
+            };
+          };
+          resolve: InsertArrResolver<typeof schema.Customers, false>;
+        };
+        readonly insertIntoPosts: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLInputObjectType>>>;
+            };
+          };
+          resolve: InsertArrResolver<typeof schema.Posts, false>;
+        };
+        readonly insertIntoTags: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLInputObjectType>>>;
+            };
+          };
+          resolve: InsertArrResolver<typeof schema.Tags, false>;
+        };
+        readonly insertIntoUsers: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLInputObjectType>>>;
+            };
+          };
+          resolve: InsertArrResolver<typeof schema.Users, false>;
+        };
+      } & {
+        readonly insertIntoCustomersSingle: {
+          type: GraphQLObjectType;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+          };
+          resolve: InsertResolver<typeof schema.Customers, false>;
+        };
+        readonly insertIntoPostsSingle: {
+          type: GraphQLObjectType;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+          };
+          resolve: InsertResolver<typeof schema.Posts, false>;
+        };
+        readonly insertIntoTagsSingle: {
+          type: GraphQLObjectType;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+          };
+          resolve: InsertResolver<typeof schema.Tags, false>;
+        };
+        readonly insertIntoUsersSingle: {
+          type: GraphQLObjectType;
+          args: {
+            values: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+          };
+          resolve: InsertResolver<typeof schema.Users, false>;
+        };
+      } & {
+        readonly updateCustomers: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            set: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: UpdateResolver<typeof schema.Customers, false>;
+        };
+        readonly updatePosts: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            set: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: UpdateResolver<typeof schema.Posts, false>;
+        };
+        readonly updateTags: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            set: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: UpdateResolver<typeof schema.Tags, false>;
+        };
+        readonly updateUsers: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            set: {
+              type: GraphQLNonNull<GraphQLInputObjectType>;
+            };
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: UpdateResolver<typeof schema.Users, false>;
+        };
+      } & {
+        readonly deleteFromCustomers: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: DeleteResolver<typeof schema.Customers, false>;
+        };
+        readonly deleteFromPosts: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: DeleteResolver<typeof schema.Posts, false>;
+        };
+        readonly deleteFromTags: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: DeleteResolver<typeof schema.Tags, false>;
+        };
+        readonly deleteFromUsers: {
+          type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
+          args: {
+            where: { type: GraphQLInputObjectType };
+          };
+          resolve: DeleteResolver<typeof schema.Users, false>;
+        };
+      }
+    >();
+  });
+
+  it('Types', () => {
+    expectTypeOf(ctx.entities.types).toEqualTypeOf<
+      {
+        readonly CustomersItem: GraphQLObjectType;
+        readonly PostsItem: GraphQLObjectType;
+        readonly TagsItem: GraphQLObjectType;
+        readonly UsersItem: GraphQLObjectType;
+      } & {
+        readonly CustomersSelectItem: GraphQLObjectType;
+        readonly PostsSelectItem: GraphQLObjectType;
+        readonly TagsSelectItem: GraphQLObjectType;
+        readonly UsersSelectItem: GraphQLObjectType;
+      }
+    >();
+  });
+
+  it('Inputs', () => {
+    expectTypeOf(ctx.entities.inputs).toEqualTypeOf<
+      {
+        readonly UsersFilters: GraphQLInputObjectType;
+        readonly CustomersFilters: GraphQLInputObjectType;
+        readonly PostsFilters: GraphQLInputObjectType;
+        readonly TagsFilters: GraphQLInputObjectType;
+      } & {
+        readonly UsersOrderBy: GraphQLInputObjectType;
+        readonly CustomersOrderBy: GraphQLInputObjectType;
+        readonly PostsOrderBy: GraphQLInputObjectType;
+        readonly TagsOrderBy: GraphQLInputObjectType;
+      } & {
+        readonly UsersInsertInput: GraphQLInputObjectType;
+        readonly CustomersInsertInput: GraphQLInputObjectType;
+        readonly PostsInsertInput: GraphQLInputObjectType;
+        readonly TagsInsertInput: GraphQLInputObjectType;
+      } & {
+        readonly UsersUpdateInput: GraphQLInputObjectType;
+        readonly CustomersUpdateInput: GraphQLInputObjectType;
+        readonly PostsUpdateInput: GraphQLInputObjectType;
+        readonly TagsUpdateInput: GraphQLInputObjectType;
+      }
+    >();
+  });
+});

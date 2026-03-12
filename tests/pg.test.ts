@@ -2479,6 +2479,61 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLObjectType),
               })
               .strict(),
+            tags: z
+              .object({
+                args: z
+                  .object({
+                    orderBy: z
+                      .object({
+                        type: z.instanceof(GraphQLInputObjectType),
+                      })
+                      .strict(),
+                    offset: z
+                      .object({
+                        type: z.instanceof(GraphQLScalarType),
+                      })
+                      .strict(),
+                    limit: z
+                      .object({
+                        type: z.instanceof(GraphQLScalarType),
+                      })
+                      .strict(),
+                    where: z
+                      .object({
+                        type: z.instanceof(GraphQLInputObjectType),
+                      })
+                      .strict(),
+                  })
+                  .strict(),
+                resolve: z.function(),
+                type: z.instanceof(GraphQLNonNull),
+              })
+              .strict(),
+            tagsSingle: z
+              .object({
+                args: z
+                  .object({
+                    orderBy: z
+                      .object({
+                        type: z.instanceof(GraphQLInputObjectType),
+                      })
+                      .strict(),
+                    offset: z
+                      .object({
+                        type: z.instanceof(GraphQLScalarType),
+                      })
+                      .strict(),
+                    where: z
+                      .object({
+                        type: z.instanceof(GraphQLInputObjectType),
+                      })
+                      .strict(),
+                  })
+                  .strict(),
+                resolve: z.function(),
+                type: z.instanceof(GraphQLObjectType),
+              })
+              .strict(),
           })
           .strict(),
         mutations: z
@@ -2678,6 +2733,71 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
+            insertIntoTags: z
+              .object({
+                args: z
+                  .object({
+                    values: z
+                      .object({
+                        type: z.instanceof(GraphQLNonNull),
+                      })
+                      .strict(),
+                  })
+                  .strict(),
+                resolve: z.function(),
+                type: z.instanceof(GraphQLNonNull),
+              })
+              .strict(),
+            insertIntoTagsSingle: z
+              .object({
+                args: z
+                  .object({
+                    values: z
+                      .object({
+                        type: z.instanceof(GraphQLNonNull),
+                      })
+                      .strict(),
+                  })
+                  .strict(),
+                resolve: z.function(),
+                type: z.instanceof(GraphQLObjectType),
+              })
+              .strict(),
+            updateTags: z
+              .object({
+                args: z
+                  .object({
+                    set: z
+                      .object({
+                        type: z.instanceof(GraphQLNonNull),
+                      })
+                      .strict(),
+                    where: z
+                      .object({
+                        type: z.instanceof(GraphQLInputObjectType),
+                      })
+                      .strict(),
+                  })
+                  .strict(),
+                resolve: z.function(),
+                type: z.instanceof(GraphQLNonNull),
+              })
+              .strict(),
+            deleteFromTags: z
+              .object({
+                args: z
+                  .object({
+                    where: z
+                      .object({
+                        type: z.instanceof(GraphQLInputObjectType),
+                      })
+                      .strict(),
+                  })
+                  .strict(),
+                resolve: z.function(),
+                type: z.instanceof(GraphQLNonNull),
+              })
+              .strict(),
           })
           .strict(),
         types: z
@@ -2688,6 +2808,8 @@ describe.sequential('Returned data tests', () => {
             PostsSelectItem: z.instanceof(GraphQLObjectType),
             CustomersItem: z.instanceof(GraphQLObjectType),
             CustomersSelectItem: z.instanceof(GraphQLObjectType),
+            TagsItem: z.instanceof(GraphQLObjectType),
+            TagsSelectItem: z.instanceof(GraphQLObjectType),
           })
           .strict(),
         inputs: z
@@ -2704,6 +2826,10 @@ describe.sequential('Returned data tests', () => {
             CustomersOrderBy: z.instanceof(GraphQLInputObjectType),
             CustomersInsertInput: z.instanceof(GraphQLInputObjectType),
             CustomersUpdateInput: z.instanceof(GraphQLInputObjectType),
+            TagsFilters: z.instanceof(GraphQLInputObjectType),
+            TagsOrderBy: z.instanceof(GraphQLInputObjectType),
+            TagsInsertInput: z.instanceof(GraphQLInputObjectType),
+            TagsUpdateInput: z.instanceof(GraphQLInputObjectType),
           })
           .strict(),
       })

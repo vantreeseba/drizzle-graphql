@@ -1,7 +1,7 @@
 import type { Column, Table } from 'drizzle-orm';
 import { extractExtendedColumnType, getColumns, is } from 'drizzle-orm';
 import { MySqlInt, MySqlSerial } from 'drizzle-orm/mysql-core';
-import { PgDateString, PgInteger, PgSerial, PgTimestamp, PgTimestampString } from 'drizzle-orm/pg-core';
+import { PgDate, PgDateString, PgInteger, PgSerial, PgTimestamp, PgTimestampString } from 'drizzle-orm/pg-core';
 import { SQLiteInteger } from 'drizzle-orm/sqlite-core';
 import {
   GraphQLBoolean,
@@ -73,7 +73,7 @@ const columnToGraphQLCore = (
     case 'boolean':
       return { type: GraphQLBoolean, description: 'Boolean' };
     case 'object':
-      if (column instanceof PgTimestamp) {
+      if (column instanceof PgTimestamp || column instanceof PgDate) {
         return { type: GraphQLDateTime, description: 'DateTime' };
       }
       return column.columnType === 'PgGeometryObject'
@@ -96,13 +96,27 @@ const columnToGraphQLCore = (
         return { type: GraphQLDateTime, description: 'DateTime' };
       }
       if (column instanceof PgDateString) {
-        return { type: GraphQLDate, description: 'Date' };
+        // For input, accept any string (drivers truncate ISO timestamps to date on write).
+        // For output, keep the strict GraphQLDate scalar so the returned value is validated.
+        return isInput ? { type: GraphQLString, description: 'Date' } : { type: GraphQLDate, description: 'Date' };
       }
 
       return { type: GraphQLString, description: 'String' };
     case 'bigint':
       return { type: GraphQLString, description: 'BigInt' };
-    case 'number':
+    case 'number': {
+      // integer().array() columns keep columnType=PgInteger but gain a `dimensions` property.
+      // drizzle-orm's extractExtendedColumnType still returns 'number' for them, so we
+      // detect the array wrapper here and recurse with a synthetic base-int scalar.
+      const dims = (column as any).dimensions as number | undefined;
+      if (dims !== undefined && dims > 0) {
+        const baseDesc = is(column, PgInteger) || is(column, PgSerial) ? 'Integer' : 'Float';
+        const baseType = baseDesc === 'Integer' ? GraphQLInt : GraphQLFloat;
+        return {
+          type: new GraphQLList(new GraphQLNonNull(baseType)),
+          description: `Array<${baseDesc}>`,
+        };
+      }
       return is(column, PgInteger) ||
         is(column, PgSerial) ||
         is(column, MySqlInt) ||
@@ -110,6 +124,7 @@ const columnToGraphQLCore = (
         is(column, SQLiteInteger)
         ? { type: GraphQLInt, description: 'Integer' }
         : { type: GraphQLFloat, description: 'Float' };
+    }
     case 'array': {
       if (column.columnType === 'PgVector') {
         return {

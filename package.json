@@ -33,6 +33,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.15.2",
     "@babel/parser": "^7.24.1",
+    "@electric-sql/pglite": "^0.3.16",
     "@libsql/client": "^0.10.0",
     "@originjs/vite-plugin-commonjs": "^1.0.3",
     "@types/dockerode": "^3.3.26",
@@ -90,9 +91,12 @@
   },
   "homepage": "https://orm.drizzle.team/docs/graphql",
   "peerDependencies": {
-    "graphql-parse-resolve-info": "^4.13.0",
-    "graphql-scalars": "^1.25.0",
     "drizzle-orm": "^1.0.0-beta.1",
-    "graphql": ">=16.3.0"
+    "graphql": ">=16.3.0",
+    "graphql-parse-resolve-info": "^4.13.0",
+    "graphql-scalars": "^1.25.0"
+  },
+  "dependencies": {
+    "pluralize": "^8.0.0"
   }
 }

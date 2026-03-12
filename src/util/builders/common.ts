@@ -13,7 +13,7 @@
 //    - Update input: ${capitalize(tableName)}UpdateInput
 // =============================================================================
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import type { Column, Table } from 'drizzle-orm';
+import type { Column, Relation, Table } from 'drizzle-orm';
 import {
   and,
   asc,
@@ -75,6 +75,72 @@ import type {
 } from './types.ts';
 
 const rqbCrashTypes = ['SQLiteBigInt', 'SQLiteBlobJson', 'SQLiteBlobBuffer'];
+
+/**
+ * Shape of the relational config from drizzle-orm v1 db._.relations.
+ * Each entry has { table, name, relations }.
+ */
+interface TableRelationalConfig {
+  table: Table;
+  name: string;
+  relations: Record<string, Relation<string>>;
+}
+export type TablesRelationalConfig = Record<string, TableRelationalConfig>;
+
+/**
+ * Flatten drizzle-orm v1 TablesRelationalConfig into the canonical
+ * Record<tableName, Record<relName, TableNamedRelations>> shape used
+ * throughout common.ts.  Both pg.ts and sqlite.ts call this before
+ * passing the relation map to any shared function.
+ */
+export const buildNamedRelations = (
+  relations: TablesRelationalConfig,
+  tableEntries: [string, Table][],
+): Record<string, Record<string, TableNamedRelations>> => {
+  const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
+
+  for (const [relTableName, relConfig] of Object.entries(relations)) {
+    if (!relConfig?.relations) {
+      continue;
+    }
+
+    const namedConfig: Record<string, TableNamedRelations> = {};
+
+    for (const [innerRelName, innerRelValue] of Object.entries(relConfig.relations)) {
+      // drizzle-orm v1 uses `targetTable` (not `referencedTable`)
+      // and provides `targetTableName` directly.
+      const targetTable = (innerRelValue as any).targetTable ?? (innerRelValue as any).referencedTable;
+      const directTargetName = (innerRelValue as any).targetTableName as string | undefined;
+
+      let targetTableName: string | undefined;
+
+      if (directTargetName) {
+        // v1: use the direct name to find the schema key
+        const targetEntry = tableEntries.find(([key]) => key === directTargetName);
+        targetTableName = targetEntry?.[0];
+      } else if (targetTable) {
+        // fallback: match by object reference
+        const targetEntry = tableEntries.find(([, tableValue]) => tableValue === targetTable);
+        targetTableName = targetEntry?.[0];
+      }
+
+      if (!targetTableName) {
+        continue;
+      }
+
+      namedConfig[innerRelName] = {
+        relation: innerRelValue,
+        targetTableName,
+      };
+    }
+
+    if (Object.keys(namedConfig).length > 0) {
+      namedRelations[relTableName] = namedConfig;
+    }
+  }
+
+  return namedRelations;
+};
 
 /** Per-call cache context — created fresh on each generateSchemaData call to avoid type name collisions. */
 export interface TypeCacheCtx {
@@ -182,11 +248,13 @@ export const innerOrder = new GraphQLInputObjectType({
 
 /**
  * Maps a Drizzle column to the generic filter type name to use.
- * - "Id"       → uuid PK/FK columns (no like/ilike operators)
- * - "DateTime" → timestamp and date columns
- * - "Boolean"  → boolean columns
+ * - "Id"          → uuid PK/FK columns (no like/ilike operators)
+ * - "DateTime"    → timestamp and date columns
+ * - "Boolean"     → boolean columns
  * - the enum GraphQL type name → enum columns (still unique per enum)
- * - "String"   → all other text/varchar columns
+ * - "IntArray"    → integer[]/serial[] array columns
+ * - "FloatArray"  → float[]/numeric[] array columns
+ * - "String"      → all other text/varchar columns
  */
 const resolveGenericFilterName = (
   column: Column,
@@ -204,6 +272,12 @@ const resolveGenericFilterName = (
   // Enum type — keep unique per enum since values differ
   if (columnGraphQLType.type instanceof GraphQLEnumType) {
     return columnGraphQLType.type.name;
+  }
+  // Array columns — give them a distinct name so they never collide with StringFilter.
+  // integer().array() columns have a `dimensions` property set on them.
+  if (columnGraphQLType.type instanceof GraphQLList) {
+    const desc = (columnGraphQLType as any).description ?? '';
+    return desc.includes('Integer') ? 'IntArray' : 'FloatArray';
   }
   // Date / timestamp columns (check Drizzle internal columnType string)
   const ct: string = (column as any).columnType ?? '';
@@ -412,7 +486,7 @@ const generateSelectFields = <TWithOrder extends boolean>(
   const tableFields = generateTableSelectTypeFieldsCached(table, tableName);
 
   const relationsForTable = relationMap[tableName];
-  const relationEntries: [string, TableNamedRelations][] = relationsForTable ? Object.entries(relationsForTable.relations) : [];
+  const relationEntries: [string, TableNamedRelations][] = relationsForTable ? Object.entries(relationsForTable) : [];
 
   // If this table is already being processed (cycle), stop recursing.
   // Return just the base fields with no relation fields.
@@ -443,7 +517,8 @@ const generateSelectFields = <TWithOrder extends boolean>(
   let relationFields: Record<string, ConvertedRelationColumnWithArgs> = {};
 
   if (isRootCall) {
-    const typeName = `${capitalize(tableName)}SelectItem`;
+//     const typeName = `${capitalize(tableName)}SelectItem`;
+    const typeName = `${capitalize(tableName)}`;
     // Pre-register shell with thunk BEFORE recursing to break circular refs.
     const shell = new GraphQLObjectType({
       name: typeName,
@@ -460,7 +535,6 @@ const generateSelectFields = <TWithOrder extends boolean>(
     // Mark this table as currently being processed.
     const nextUsedTables = new Set(usedTables);
     nextUsedTables.add(tableName);
-
 
     for (const [relationName, relEntry] of relationEntries) {
       const { targetTableName } = relEntry;
@@ -588,22 +662,25 @@ export const generateTableTypes = <WithReturning extends boolean>(
   const selectSingleOutput =
     cacheCtx.objectTypeCache.get(tableName) ??
     new GraphQLObjectType({
-      name: `${capitalize(tableName)}SelectItem`,
+//       name: `${capitalize(tableName)}SelectItem`,
+      name: `${capitalize(tableName)}`,
       fields: { ...tableFields, ...relationFields },
     });
 
   const selectArrOutput = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput)));
 
   // Mutation return type: ${capitalize(tableName)}Item (table columns only, no relations)
-  const singleTableItemOutput = withReturning
-    ? new GraphQLObjectType({
-        name: `${capitalize(tableName)}Item`,
-        fields: tableFields,
-      })
-    : undefined;
+//   const singleTableItemOutput = withReturning
+//     ? new GraphQLObjectType({
+//         name: `${capitalize(tableName)}`,
+// //         name: `${capitalize(tableName)}Item`,
+//         fields: tableFields,
+//       })
+//     : undefined;
 
   const arrTableItemOutput = withReturning
-    ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)))
+//     ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)))
+    ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput!)))
     : undefined;
 
   const inputs = {
@@ -618,7 +695,8 @@ export const generateTableTypes = <WithReturning extends boolean>(
       ? {
           selectSingleOutput,
           selectArrOutput,
-          singleTableItemOutput: singleTableItemOutput!,
+          singleTableItemOutput: selectSingleOutput!,
+//           singleTableItemOutput: singleTableItemOutput!,
           arrTableItemOutput: arrTableItemOutput!,
         }
       : {
@@ -800,8 +878,8 @@ const extractRelationsParamsInner = (
   originField: ResolveTree,
   _isInitial: boolean = false,
 ) => {
-  const relations = relationMap[tableName];
-  if (!relations) {
+  const relationsForTable = relationMap[tableName];
+  if (!relationsForTable) {
     return undefined;
   }
 
@@ -812,7 +890,7 @@ const extractRelationsParamsInner = (
 
   const args: Record<string, Partial<ProcessedTableSelectArgs>> = {};
 
-  for (const [relName, { targetTableName }] of Object.entries(relations)) {
+  for (const [relName, { targetTableName }] of Object.entries(relationsForTable)) {
     // The relation type name: ${capitalize(tableName)}${capitalize(relName)}Relation
     const relTypeName = `${capitalize(tableName)}${capitalize(relName)}Relation`;
     // Look up by field name OR by alias (when the caller uses an alias for the relation).

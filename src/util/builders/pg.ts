@@ -1,5 +1,5 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import { is, type Relation, type Table, type View } from 'drizzle-orm';
+import { is, type Table, type View } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
 import { type PgAsyncDatabase, type PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, ThunkObjMap } from 'graphql';
@@ -15,15 +15,17 @@ import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { parseResolveInfo } from 'graphql-parse-resolve-info';
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  buildNamedRelations,
   extractFilters,
   extractOrderBy,
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  type TablesRelationalConfig,
   type TypeCacheCtx,
 } from '../builders/common.ts';
-import { capitalize, cleanTableName } from '../case-ops/index.ts';
+import { capitalize, uncapitalize, singularize } from '../case-ops/index.ts';
 import {
   remapFromGraphQLArrayInput,
   remapFromGraphQLSingleInput,
@@ -41,7 +43,10 @@ const generateSelectArray = (
   filterArgs: GraphQLInputObjectType,
   listSuffix: string,
 ): CreatedResolver => {
-  const queryName = `${cleanTableName(tableName)}${listSuffix}`;
+
+  const queryEntityBase = uncapitalize(tableName);
+
+  const queryName = `${queryEntityBase}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -62,7 +67,8 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+//   const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
   return {
@@ -133,7 +139,9 @@ const generateSelectSingle = (
   filterArgs: GraphQLInputObjectType,
   singleSuffix: string,
 ): CreatedResolver => {
-  const queryName = `${cleanTableName(tableName)}${singleSuffix}`;
+
+  const queryEntityBase = singularize(uncapitalize(tableName));
+  const queryName = `${queryEntityBase}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -151,7 +159,8 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+//   const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = `${capitalize(tableName)}`;
   const table = tables[tableName]!;
 
   return {
@@ -221,7 +230,7 @@ const generateInsertArray = (
   conflictDoNothing: boolean = false,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -274,8 +283,11 @@ const generateInsertSingle = (
   prefix: string,
   conflictDoNothing: boolean = false,
 ): CreatedResolver => {
-  const queryName = `${prefix}${capitalize(tableName)}Single`;
-  const typeName = `${capitalize(tableName)}Item`;
+
+  const queryEntityBase = singularize(capitalize(tableName));
+  const queryName = `${prefix}${queryEntityBase}`;
+//   const queryName = `${prefix}${capitalize(tableName)}Single`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -330,7 +342,8 @@ const generateUpdate = (
   prefix: string,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+//   const typeName = `${capitalize(tableName)}Item`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs = {
     set: {
@@ -392,7 +405,8 @@ const generateDelete = (
   prefix: string,
 ): CreatedResolver => {
   const queryName = `${prefix}${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+//   const typeName = `${capitalize(tableName)}Item`;
+  const typeName = `${capitalize(tableName)}`;
 
   const queryArgs = {
     where: {
@@ -439,12 +453,6 @@ const generateDelete = (
 };
 
 type SchemaEntry = Table<any> | View<string, boolean, any>;
-interface TableRelationalConfig {
-  table: SchemaEntry;
-  name: string;
-  relations: Record<string, Relation<string>>;
-}
-type TablesRelationalConfig = Record<string, TableRelationalConfig>;
 
 export function generateSchemaData<
   TDrizzleInstance extends PgAsyncDatabase<any, any>,
@@ -469,6 +477,10 @@ export function generateSchemaData<
     );
   }
 
+  // Flatten drizzle-orm v1 TablesRelationalConfig into the canonical shape
+  // used throughout common.ts: Record<tableName, Record<relName, TableNamedRelations>>
+  const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+
   // Fresh cache per generateSchemaData call — prevents type name collisions
   // when buildSchema() is called multiple times.
   const cacheCtx: TypeCacheCtx = {
@@ -483,7 +495,7 @@ export function generateSchemaData<
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, relations, true, relationsDepthLimit, cacheCtx),
+      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx),
     ]),
   );
 
@@ -498,7 +510,7 @@ export function generateSchemaData<
       db,
       tableName,
       tables,
-      relations,
+      namedRelations,
       tableOrder,
       tableFilters,
       suffixes.list,
@@ -507,7 +519,7 @@ export function generateSchemaData<
       db,
       tableName,
       tables,
-      relations,
+      namedRelations,
       tableOrder,
       tableFilters,
       suffixes.single,

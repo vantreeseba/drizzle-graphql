@@ -1,5 +1,5 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import { is, type Relation, type Table } from 'drizzle-orm';
+import { is, type Table } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
 import { type BaseSQLiteDatabase, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, GraphQLResolveInfo, ThunkObjMap } from 'graphql';
@@ -16,12 +16,14 @@ import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  buildNamedRelations,
   extractFilters,
   extractOrderBy,
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  type TablesRelationalConfig,
   type TypeCacheCtx,
 } from '../builders/common.ts';
 import { capitalize, uncapitalize } from '../case-ops/index.ts';
@@ -391,70 +393,6 @@ const generateDelete = (
     },
     args: queryArgs,
   };
-};
-
-/** Shape of the relational config from drizzle-orm v1 db._.relations */
-interface TableRelationalConfig {
-  table: Table;
-  name: string;
-  relations: Record<string, Relation<string>>;
-}
-type TablesRelationalConfig = Record<string, TableRelationalConfig>;
-
-/**
- * Build namedRelations from drizzle-orm v1 TablesRelationalConfig.
- *
- * In drizzle-orm 1.0, db._.relations is a Record where each key is the
- * schema variable name (e.g. "Users") and the value has { table, name, relations }.
- * Each relation has a referencedTable property we can match against tableEntries.
- */
-const buildNamedRelations = (
-  relations: TablesRelationalConfig,
-  tableEntries: [string, Table][],
-): Record<string, Record<string, TableNamedRelations>> => {
-  const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
-
-  for (const [relTableName, relConfig] of Object.entries(relations)) {
-    if (!relConfig?.relations) {
-      continue;
-    }
-
-    const namedConfig: Record<string, TableNamedRelations> = {};
-
-    for (const [innerRelName, innerRelValue] of Object.entries(relConfig.relations)) {
-      // drizzle-orm v1 uses `targetTable` (not `referencedTable`)
-      // and provides `targetTableName` directly.
-      const targetTable = (innerRelValue as any).targetTable ?? (innerRelValue as any).referencedTable;
-      const directTargetName = (innerRelValue as any).targetTableName as string | undefined;
-
-      let targetTableName: string | undefined;
-
-      if (directTargetName) {
-        // v1: use the direct name to find the schema key
-        const targetEntry = tableEntries.find(([key]) => key === directTargetName);
-        targetTableName = targetEntry?.[0];
-      } else if (targetTable) {
-        // fallback: match by object reference
-        const targetEntry = tableEntries.find(([, tableValue]) => tableValue === targetTable);
-        targetTableName = targetEntry?.[0];
-      }
-
-      if (!targetTableName) {
-        continue;
-      }
-
-      namedConfig[innerRelName] = {
-        relation: innerRelValue,
-        targetTableName,
-      };
-    }
-
-    if (Object.keys(namedConfig).length > 0) {
-      namedRelations[relTableName] = namedConfig;
-    }
-  }
-
-  return namedRelations;
 };
 
 export const generateSchemaData = <
