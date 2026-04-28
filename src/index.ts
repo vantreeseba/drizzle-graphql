@@ -12,6 +12,8 @@ import {
 import type { AnyDrizzleDB, BuildSchemaConfig, GeneratedData } from './types.ts';
 import { generateMySQL, generatePG, generateSQLite } from './util/builders/index.ts';
 
+export { extractFilters, extractOrderBy } from './util/builders/common.ts';
+
 export type {
   AnyDrizzleDB,
   BuildSchemaConfig,

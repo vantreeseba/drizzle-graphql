@@ -1,4 +1,4 @@
-import { Table, Column, Relation, One, Many } from 'drizzle-orm';
+import { Table, Column, SQL, Relation, One, Many } from 'drizzle-orm';
 import { MySqlDatabase } from 'drizzle-orm/mysql-core';
 import { PgAsyncDatabase } from 'drizzle-orm/pg-core';
 import { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
@@ -61,6 +61,9 @@ type OrderByArgs<TTable extends Table> = {
         priority: number;
     };
 };
+
+declare const extractOrderBy: <TTable extends Table, TArgs extends OrderByArgs<any> = OrderByArgs<TTable>>(table: TTable, orderArgs: TArgs) => SQL[];
+declare const extractFilters: <TTable extends Table>(table: TTable, tableName: string, filters: Filters<TTable>) => SQL | undefined;
 
 type Relations<TTable extends string = string, TConfig extends Record<string, Relation> = Record<string, Relation>> = {
     table: {
@@ -285,4 +288,4 @@ type BuildSchemaConfig = {
 
 declare const buildSchema: <TDbClient extends AnyDrizzleDB<any>>(db: TDbClient, config?: BuildSchemaConfig) => GeneratedData<TDbClient>;
 
-export { type AnyDrizzleDB, type BuildSchemaConfig, type DeleteResolver, type ExtractRelations, type ExtractTableByName, type ExtractTableRelations, type ExtractTables, type GeneratedData, type GeneratedEntities, type GeneratedInputs, type GeneratedOutputs, type InsertArrResolver, type InsertResolver, type MutationReturnlessResult, type MutationsCore, type QueriesCore, type SelectResolver, type SelectSingleResolver, type UpdateResolver, buildSchema };
+export { type AnyDrizzleDB, type BuildSchemaConfig, type DeleteResolver, type ExtractRelations, type ExtractTableByName, type ExtractTableRelations, type ExtractTables, type GeneratedData, type GeneratedEntities, type GeneratedInputs, type GeneratedOutputs, type InsertArrResolver, type InsertResolver, type MutationReturnlessResult, type MutationsCore, type QueriesCore, type SelectResolver, type SelectSingleResolver, type UpdateResolver, buildSchema, extractFilters, extractOrderBy };

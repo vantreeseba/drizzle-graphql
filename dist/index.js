@@ -2315,6 +2315,8 @@ var buildSchema = (db, config) => {
   return { schema: outputSchema, entities: generatorOutput };
 };
 export {
-  buildSchema
+  buildSchema,
+  extractFilters,
+  extractOrderBy
 };
 //# sourceMappingURL=index.js.map
