@@ -38,10 +38,10 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         user: {
-          __typename: 'Users',
+          __typename: 'User',
         },
         post: {
-          __typename: 'Posts',
+          __typename: 'Post',
         },
       },
     });
@@ -64,33 +64,33 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'Users',
+            __typename: 'User',
           },
           {
-            __typename: 'Users',
+            __typename: 'User',
           },
           {
-            __typename: 'Users',
+            __typename: 'User',
           },
         ],
         posts: [
           {
-            __typename: 'Posts',
+            __typename: 'Post',
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
           },
         ],
       },
@@ -119,27 +119,27 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         user: {
-          __typename: 'Users',
+          __typename: 'User',
           posts: [
             {
-              __typename: 'Posts',
+              __typename: 'Post',
             },
             {
-              __typename: 'Posts',
+              __typename: 'Post',
             },
             {
-              __typename: 'Posts',
+              __typename: 'Post',
             },
 
             {
-              __typename: 'Posts',
+              __typename: 'Post',
             },
           ],
         },
         post: {
-          __typename: 'Posts',
+          __typename: 'Post',
           author: {
-            __typename: 'Users',
+            __typename: 'User',
           },
         },
       },
@@ -169,73 +169,73 @@ describe.sequential('__typename only tests', async () => {
       data: {
         users: [
           {
-            __typename: 'Users',
+            __typename: 'User',
             posts: [
               {
-                __typename: 'Posts',
+                __typename: 'Post',
               },
               {
-                __typename: 'Posts',
+                __typename: 'Post',
               },
               {
-                __typename: 'Posts',
+                __typename: 'Post',
               },
               {
-                __typename: 'Posts',
+                __typename: 'Post',
               },
             ],
           },
           {
-            __typename: 'Users',
+            __typename: 'User',
             posts: [],
           },
           {
-            __typename: 'Users',
+            __typename: 'User',
             posts: [
               {
-                __typename: 'Posts',
+                __typename: 'Post',
               },
               {
-                __typename: 'Posts',
+                __typename: 'Post',
               },
             ],
           },
         ],
         posts: [
           {
-            __typename: 'Posts',
+            __typename: 'Post',
             author: {
-              __typename: 'Users',
+              __typename: 'User',
             },
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
             author: {
-              __typename: 'Users',
+              __typename: 'User',
             },
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
             author: {
-              __typename: 'Users',
+              __typename: 'User',
             },
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
             author: {
-              __typename: 'Users',
+              __typename: 'User',
             },
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
             author: {
-              __typename: 'Users',
+              __typename: 'User',
             },
           },
           {
-            __typename: 'Posts',
+            __typename: 'Post',
             author: {
-              __typename: 'Users',
+              __typename: 'User',
             },
           },
         ],
@@ -270,7 +270,7 @@ describe.sequential('__typename only tests', async () => {
     expect(res).toStrictEqual({
       data: {
         createUser: {
-          __typename: 'Users',
+          __typename: 'User',
         },
       },
     });
@@ -321,10 +321,10 @@ describe.sequential('__typename only tests', async () => {
       data: {
         createUsers: [
           {
-            __typename: 'Users',
+            __typename: 'User',
           },
           {
-            __typename: 'Users',
+            __typename: 'User',
           },
         ],
       },
@@ -344,10 +344,10 @@ describe.sequential('__typename only tests', async () => {
       data: {
         updateCustomers: [
           {
-            __typename: 'Customers',
+            __typename: 'Customer',
           },
           {
-            __typename: 'Customers',
+            __typename: 'Customer',
           },
         ],
       },
@@ -367,10 +367,10 @@ describe.sequential('__typename only tests', async () => {
       data: {
         deleteCustomers: [
           {
-            __typename: 'Customers',
+            __typename: 'Customer',
           },
           {
-            __typename: 'Customers',
+            __typename: 'Customer',
           },
         ],
       },

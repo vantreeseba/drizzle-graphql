@@ -56,11 +56,12 @@ beforeAll(async (_t) => {
   const connectionString = await createDockerDB();
 
   const sleep = 1000;
-  let timeLeft = 30000;
+  let timeLeft = 60000;
   let connected = false;
   let lastError: unknown | undefined;
   do {
     try {
+      await ctx.client?.end().catch(() => {});
       ctx.client = await mysql.createConnection(connectionString);
       await ctx.client.connect();
       connected = true;

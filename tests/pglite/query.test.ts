@@ -567,7 +567,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on Users {
+			fragment UsersFrag on User {
 				a
 				id
 				name
@@ -583,7 +583,7 @@ describe.sequential('Query tests', async () => {
 				isConfirmed
 			}
 
-			fragment PostsFrag on Posts {
+			fragment PostsFrag on Post {
 				id
 				authorId
 				content
@@ -628,7 +628,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on Users {
+			fragment UsersFrag on User {
 				a
 				id
 				name
@@ -644,7 +644,7 @@ describe.sequential('Query tests', async () => {
 				isConfirmed
 			}
 
-			fragment PostsFrag on Posts {
+			fragment PostsFrag on Post {
 				id
 				authorId
 				content
@@ -748,7 +748,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on Users {
+			fragment UsersFrag on User {
 				a
 				id
 				name
@@ -769,7 +769,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on Posts {
+			fragment PostsFrag on Post {
 				id
 				authorId
 				content
@@ -867,7 +867,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment UsersFrag on Users {
+			fragment UsersFrag on User {
 				a
 				id
 				name
@@ -888,7 +888,7 @@ describe.sequential('Query tests', async () => {
 				}
 			}
 
-			fragment PostsFrag on Posts {
+			fragment PostsFrag on Post {
 				id
 				authorId
 				content

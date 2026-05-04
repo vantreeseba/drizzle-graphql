@@ -24,6 +24,7 @@ describe('printSchema', () => {
   it('prints a non-empty GraphQL SDL from buildSchema', () => {
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
     const { schema: gqlSchema } = buildSchema(db, {
+      singularTypes: true,
       prefixes: {
         insert: 'create',
         delete: 'delete',
@@ -32,7 +33,7 @@ describe('printSchema', () => {
       suffixes: {
         single: '',
         list: 's',
-      }
+      },
     });
     const sdl = printSchema(gqlSchema);
 

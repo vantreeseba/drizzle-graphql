@@ -47,10 +47,11 @@ const generateSelectArray = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  _listSuffix: string,
+  listSuffix: string,
   singularTypes: boolean,
 ): CreatedResolver => {
-  const queryName = `${uncapitalize(tableName)}`;
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${listSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -123,10 +124,11 @@ const generateSelectSingle = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  _singleSuffix: string,
+  singleSuffix: string,
   singularTypes: boolean,
 ): CreatedResolver => {
-  const queryName = `${uncapitalize(tableName)}Single`;
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${singleSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -247,7 +249,8 @@ const generateInsertSingle = (
   baseType: GraphQLInputObjectType,
   singularTypes: boolean = false,
 ): CreatedResolver => {
-  const queryName = `insertInto${capitalize(tableName)}Single`;
+  const queryEntityBase = singularTypes ? singularize(capitalize(tableName)) : capitalize(tableName);
+  const queryName = singularTypes ? `insertInto${queryEntityBase}` : `insertInto${queryEntityBase}Single`;
   const typeName = toTypeName(tableName, singularTypes);
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {

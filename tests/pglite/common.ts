@@ -42,7 +42,9 @@ export const setupServer = async (ctx: Context, port: number, dataDir: string): 
   });
 
   const { schema: gqlSchema, entities } = buildSchema(ctx.db, {
+    singularTypes: true,
     prefixes: { insert: 'create', delete: 'delete' },
+    suffixes: { single: '', list: 's' },
   });
   const yoga = createYoga({ schema: gqlSchema });
   const server = createServer(yoga);
@@ -84,7 +86,9 @@ export const setupMinimal = async (ctx: MinimalContext, dataDir: string): Promis
   });
 
   const { schema: gqlSchema, entities } = buildSchema(ctx.db, {
+    singularTypes: true,
     prefixes: { insert: 'create', delete: 'delete' },
+    suffixes: { single: '', list: 's' },
   });
 
   ctx.schema = gqlSchema;

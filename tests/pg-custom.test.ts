@@ -55,13 +55,14 @@ async function createDockerDB(ctx: Context): Promise<string> {
 beforeAll(async () => {
   const connectionString = await createDockerDB(ctx);
 
-  const sleep = 250;
-  let timeLeft = 5000;
+  const sleep = 1000;
+  let timeLeft = 30000;
   let connected = false;
   let lastError: unknown | undefined;
 
   do {
     try {
+      await ctx.client?.end().catch(() => {});
       ctx.client = postgres(connectionString, {
         max: 1,
         onnotice: () => {
