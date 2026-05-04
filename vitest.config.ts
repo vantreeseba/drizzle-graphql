@@ -10,7 +10,10 @@ export default defineConfig({
       tsconfig: 'tsconfig.json',
     },
     testTimeout: 100000,
-    hookTimeout: 100000,
+    hookTimeout: 120000,
+    // Limit Docker-based tests to avoid container startup contention
+    maxWorkers: 3,
+    minWorkers: 1,
   },
   plugins: [viteCommonjs(), tsconfigPaths()],
   resolve: { alias: { graphql: 'graphql/index.js' } },

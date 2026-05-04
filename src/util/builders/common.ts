@@ -5,15 +5,15 @@
 //    types (IdFilter, StringFilter, DateTimeFilter, BooleanFilter, per-enum)
 //    instead of one type per (table, column) pair.
 //
-// 2. Type naming follows upstream drizzle-graphql convention:
-//    - Select types: ${capitalize(tableName)}SelectItem (e.g. UsersSelectItem)
-//    - Relation types: ${capitalize(fromTable)}${capitalize(relName)}Relation
-//    - Mutation return: ${capitalize(tableName)}Item
-//    - Insert input: ${capitalize(tableName)}InsertInput
-//    - Update input: ${capitalize(tableName)}UpdateInput
+// 2. Type naming:
+//    - Select types: ${capitalize(tableName)} (e.g. Users)
+//    - Relation fields: reference the target table's type directly (e.g. posts: [Posts!]!)
+//    - Mutation return: same type as select (${capitalize(tableName)})
+//    - Insert input: ${capitalize(insertPrefix)}${toTypeName(tableName)}Input (e.g. CreateUsersInput)
+//    - Update input: ${capitalize(updatePrefix)}${toTypeName(tableName)}Input (e.g. UpdateUsersInput)
 // =============================================================================
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import type { Column, Table } from 'drizzle-orm';
+import type { Column, Relation, Table } from 'drizzle-orm';
 import {
   and,
   asc,
@@ -50,7 +50,7 @@ import {
   GraphQLString,
 } from 'graphql';
 import type { ResolveTree } from 'graphql-parse-resolve-info';
-import { capitalize } from '../case-ops/index.ts';
+import { capitalize, singularize } from '../case-ops/index.ts';
 import { remapFromGraphQLCore } from '../data-mappers/index.ts';
 import { drizzleColumnToGraphQLType, drizzleRelationToGraphQLInsertType } from '../type-converter/index.ts';
 import type {
@@ -76,18 +76,103 @@ import type {
 
 const rqbCrashTypes = ['SQLiteBigInt', 'SQLiteBlobJson', 'SQLiteBlobBuffer'];
 
+/** Produce the GraphQL object type name for a table, optionally singularized. */
+const toTypeName = (name: string, singular: boolean): string =>
+  singular ? capitalize(singularize(name)) : capitalize(name);
+
+/**
+ * Shape of the relational config from drizzle-orm v1 db._.relations.
+ * Each entry has { table, name, relations }.
+ */
+interface TableRelationalConfig {
+  table: Table;
+  name: string;
+  relations: Record<string, Relation<string>>;
+}
+export type TablesRelationalConfig = Record<string, TableRelationalConfig>;
+
+/**
+ * Flatten drizzle-orm v1 TablesRelationalConfig into the canonical
+ * Record<tableName, Record<relName, TableNamedRelations>> shape used
+ * throughout common.ts.  Both pg.ts and sqlite.ts call this before
+ * passing the relation map to any shared function.
+ */
+export const buildNamedRelations = (
+  relations: TablesRelationalConfig,
+  tableEntries: [string, Table][],
+): Record<string, Record<string, TableNamedRelations>> => {
+  const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
+
+  for (const [relTableName, relConfig] of Object.entries(relations)) {
+    if (!relConfig?.relations) {
+      continue;
+    }
+
+    const namedConfig: Record<string, TableNamedRelations> = {};
+
+    for (const [innerRelName, innerRelValue] of Object.entries(relConfig.relations)) {
+      // drizzle-orm v1 uses `targetTable` (not `referencedTable`)
+      // and provides `targetTableName` directly.
+      const targetTable = (innerRelValue as any).targetTable ?? (innerRelValue as any).referencedTable;
+      const directTargetName = (innerRelValue as any).targetTableName as string | undefined;
+
+      let targetTableName: string | undefined;
+
+      if (directTargetName) {
+        // v1: use the direct name to find the schema key
+        const targetEntry = tableEntries.find(([key]) => key === directTargetName);
+        targetTableName = targetEntry?.[0];
+      } else if (targetTable) {
+        // fallback: match by object reference
+        const targetEntry = tableEntries.find(([, tableValue]) => tableValue === targetTable);
+        targetTableName = targetEntry?.[0];
+      }
+
+      if (!targetTableName) {
+        continue;
+      }
+
+      namedConfig[innerRelName] = {
+        relation: innerRelValue,
+        targetTableName,
+      };
+    }
+
+    if (Object.keys(namedConfig).length > 0) {
+      namedRelations[relTableName] = namedConfig;
+    }
+  }
+
+  return namedRelations;
+};
+
 /** Per-call cache context — created fresh on each generateSchemaData call to avoid type name collisions. */
 export interface TypeCacheCtx {
   /** Cache of generic filter type pairs, keyed by generic name (e.g. "String", "DateTime"). */
   genericFilterCache: Map<string, { main: GraphQLInputObjectType; or: GraphQLInputObjectType }>;
   /**
    * Cache of shared select object types, keyed by table name.
-   * Value: the ${capitalize(tableName)}SelectItem type.
+   * Value: the ${capitalize(tableName)} type (columns + relation fields).
+   * A table may be pre-registered here as a columns-only shell before its root call runs.
+   * Use fullyBuiltTables to distinguish a complete type from a pre-registered shell.
    */
   objectTypeCache: Map<string, GraphQLObjectType>;
   /**
+   * Mutable containers for relation fields, keyed by table name.
+   * Each container object is closed over by the corresponding GraphQLObjectType thunk so that
+   * when the root call for a table populates its relation fields, the thunk automatically picks
+   * them up — even if the shell was pre-registered by a different table's relation traversal.
+   */
+  relationFieldContainers: Map<string, { fields: Record<string, ConvertedRelationColumnWithArgs> }>;
+  /**
+   * Set of table names whose GraphQL object type has been fully built (root call completed).
+   * Pre-registered shells (created when another table references this table as a relation target)
+   * are NOT in this set until the root call for that table runs.
+   */
+  fullyBuiltTables: Set<string>;
+  /**
    * Cache of relation types, keyed by "${fromTableName}::${relName}".
-   * Value: the ${capitalize(fromTableName)}${capitalize(relName)}Relation type.
+   * @deprecated No longer used — relation fields now reference the target table's own type directly.
    */
   relationTypeCache: Map<string, GraphQLObjectType>;
 }
@@ -182,11 +267,13 @@ export const innerOrder = new GraphQLInputObjectType({
 
 /**
  * Maps a Drizzle column to the generic filter type name to use.
- * - "Id"       → uuid PK/FK columns (no like/ilike operators)
- * - "DateTime" → timestamp and date columns
- * - "Boolean"  → boolean columns
+ * - "Id"          → uuid PK/FK columns (no like/ilike operators)
+ * - "DateTime"    → timestamp and date columns
+ * - "Boolean"     → boolean columns
  * - the enum GraphQL type name → enum columns (still unique per enum)
- * - "String"   → all other text/varchar columns
+ * - "IntArray"    → integer[]/serial[] array columns
+ * - "FloatArray"  → float[]/numeric[] array columns
+ * - "String"      → all other text/varchar columns
  */
 const resolveGenericFilterName = (
   column: Column,
@@ -204,6 +291,12 @@ const resolveGenericFilterName = (
   // Enum type — keep unique per enum since values differ
   if (columnGraphQLType.type instanceof GraphQLEnumType) {
     return columnGraphQLType.type.name;
+  }
+  // Array columns — give them a distinct name so they never collide with StringFilter.
+  // integer().array() columns have a `dimensions` property set on them.
+  if (columnGraphQLType.type instanceof GraphQLList) {
+    const desc = (columnGraphQLType as any).description ?? '';
+    return desc.includes('Integer') ? 'IntArray' : 'FloatArray';
   }
   // Date / timestamp columns (check Drizzle internal columnType string)
   const ct: string = (column as any).columnType ?? '';
@@ -340,14 +433,14 @@ const generateTableSelectTypeFieldsCached = (table: Table, tableName: string): R
 };
 
 const orderTypeMap = new WeakMap<Object, GraphQLInputObjectType>();
-const generateTableOrderTypeCached = (table: Table, tableName: string) => {
+const generateTableOrderTypeCached = (table: Table, tableName: string, singularTypes: boolean) => {
   if (orderTypeMap.has(table)) {
     return orderTypeMap.get(table)!;
   }
 
   const orderColumns = generateTableOrderCached(table);
   const order = new GraphQLInputObjectType({
-    name: `${capitalize(tableName)}OrderBy`,
+    name: `${toTypeName(tableName, singularTypes)}OrderBy`,
     fields: orderColumns,
   });
 
@@ -357,21 +450,26 @@ const generateTableOrderTypeCached = (table: Table, tableName: string) => {
 };
 
 const filterTypeMap = new WeakMap<Object, GraphQLInputObjectType>();
-const generateTableFilterTypeCached = (table: Table, tableName: string, cacheCtx: TypeCacheCtx) => {
+const generateTableFilterTypeCached = (
+  table: Table,
+  tableName: string,
+  cacheCtx: TypeCacheCtx,
+  singularTypes: boolean,
+) => {
   if (filterTypeMap.has(table)) {
     return filterTypeMap.get(table)!;
   }
 
   const filterColumns = generateTableFilterValuesCached(table, tableName, cacheCtx);
   const filters = new GraphQLInputObjectType({
-    name: `${capitalize(tableName)}Filters`,
+    name: `${toTypeName(tableName, singularTypes)}Filters`,
     fields: {
       ...filterColumns,
       OR: {
         type: new GraphQLList(
           new GraphQLNonNull(
             new GraphQLInputObjectType({
-              name: `${capitalize(tableName)}FiltersOr`,
+              name: `${toTypeName(tableName, singularTypes)}FiltersOr`,
               fields: filterColumns,
             }),
           ),
@@ -388,8 +486,9 @@ const generateTableFilterTypeCached = (table: Table, tableName: string, cacheCtx
 /**
  * Build the select fields for a table.
  * Creates:
- * - Main select type: ${capitalize(tableName)}SelectItem (e.g. UsersSelectItem)
- * - Relation field types: ${capitalize(fromTable)}${capitalize(relName)}Relation
+ * - Main select type: ${capitalize(tableName)} (e.g. Users)
+ * - Relation fields reference the target table's own type directly (e.g. posts: [Posts!]!)
+ *   rather than creating intermediate relation types.
  *
  * The function is called recursively for relation targets.
  * Cycle detection: usedTables tracks tables currently being processed in the call stack.
@@ -404,15 +503,16 @@ const generateSelectFields = <TWithOrder extends boolean>(
   withOrder: TWithOrder,
   _relationsDepthLimit: number | undefined,
   cacheCtx: TypeCacheCtx,
+  singularTypes: boolean,
   usedTables: Set<string> = new Set(),
 ): SelectData<TWithOrder> => {
   const table = tables[tableName]!;
-  const order = withOrder ? generateTableOrderTypeCached(table, tableName) : undefined;
-  const filters = generateTableFilterTypeCached(table, tableName, cacheCtx);
+  const order = withOrder ? generateTableOrderTypeCached(table, tableName, singularTypes) : undefined;
+  const filters = generateTableFilterTypeCached(table, tableName, cacheCtx, singularTypes);
   const tableFields = generateTableSelectTypeFieldsCached(table, tableName);
 
   const relationsForTable = relationMap[tableName];
-  const relationEntries: [string, TableNamedRelations][] = relationsForTable ? Object.entries(relationsForTable.relations) : [];
+  const relationEntries: [string, TableNamedRelations][] = relationsForTable ? Object.entries(relationsForTable) : [];
 
   // If this table is already being processed (cycle), stop recursing.
   // Return just the base fields with no relation fields.
@@ -430,8 +530,8 @@ const generateSelectFields = <TWithOrder extends boolean>(
   // For recursive calls, this builds the relation type.
   const isRootCall = fromTableName === '' && fromRelationName === '';
 
-  // If the root type is already fully cached, return early.
-  if (isRootCall && cacheCtx.objectTypeCache.has(tableName)) {
+  // If the root type has already been fully built (not just pre-registered as a shell), return early.
+  if (isRootCall && cacheCtx.fullyBuiltTables.has(tableName)) {
     return {
       order,
       filters,
@@ -440,14 +540,23 @@ const generateSelectFields = <TWithOrder extends boolean>(
     } as SelectData<TWithOrder>;
   }
 
-  let relationFields: Record<string, ConvertedRelationColumnWithArgs> = {};
+  // Obtain or create the mutable relation-fields container for this table.
+  // The container is a plain object whose `fields` property the GraphQLObjectType thunk reads.
+  // Pre-registering it here (before recursion) allows sibling relation traversals to reference
+  // the same single GraphQLObjectType instance even when it hasn't been fully built yet.
+  let container = cacheCtx.relationFieldContainers.get(tableName);
+  if (!container) {
+    container = { fields: {} };
+    cacheCtx.relationFieldContainers.set(tableName, container);
+  }
 
-  if (isRootCall) {
-    const typeName = `${capitalize(tableName)}SelectItem`;
+  if (isRootCall && !cacheCtx.objectTypeCache.has(tableName)) {
+    const typeName = toTypeName(tableName, singularTypes);
     // Pre-register shell with thunk BEFORE recursing to break circular refs.
+    // The thunk reads container.fields, which will be populated after recursion completes.
     const shell = new GraphQLObjectType({
       name: typeName,
-      fields: () => ({ ...tableFields, ...relationFields }),
+      fields: () => ({ ...tableFields, ...container!.fields }),
     });
     cacheCtx.objectTypeCache.set(tableName, shell);
   }
@@ -460,7 +569,6 @@ const generateSelectFields = <TWithOrder extends boolean>(
     // Mark this table as currently being processed.
     const nextUsedTables = new Set(usedTables);
     nextUsedTables.add(tableName);
-
 
     for (const [relationName, relEntry] of relationEntries) {
       const { targetTableName } = relEntry;
@@ -478,20 +586,35 @@ const generateSelectFields = <TWithOrder extends boolean>(
         !isOne,
         undefined,
         cacheCtx,
+        singularTypes,
         nextUsedTables,
       );
 
-      // Get or create the relation type.
-      const relCacheKey = `${tableName}::${relationName}`;
-      const relTypeName = `${capitalize(tableName)}${capitalize(relationName)}Relation`;
-
-      let relType = cacheCtx.relationTypeCache.get(relCacheKey);
+      // Use the target table's own GraphQL type directly instead of creating an intermediate relation type.
+      // Ensure exactly one GraphQLObjectType instance exists for the target table.
+      // If the root call for the target table has already run (or pre-registered a shell),
+      // reuse that instance so the schema never contains duplicate type names.
+      let relType = cacheCtx.objectTypeCache.get(targetTableName);
       if (!relType) {
+        // The target table hasn't been processed yet. Pre-register a shell so that:
+        //   (a) this relation field has a concrete type reference, and
+        //   (b) when the target table's root call eventually runs, it reuses this same object.
+        const targetTable = tables[targetTableName]!;
+        const targetTableFields = generateTableSelectTypeFieldsCached(targetTable, targetTableName);
+        // Get or create a container for the target table's relation fields.
+        let targetContainer = cacheCtx.relationFieldContainers.get(targetTableName);
+        if (!targetContainer) {
+          targetContainer = { fields: {} };
+          cacheCtx.relationFieldContainers.set(targetTableName, targetContainer);
+        }
+        const capturedTargetContainer = targetContainer;
+        // The thunk reads capturedTargetContainer.fields so that when the target table's root
+        // call populates the container, the shell automatically includes those relation fields.
         relType = new GraphQLObjectType({
-          name: relTypeName,
-          fields: { ...relSelectData.tableFields, ...relSelectData.relationFields },
+          name: toTypeName(targetTableName, singularTypes),
+          fields: () => ({ ...targetTableFields, ...capturedTargetContainer.fields }),
         });
-        cacheCtx.relationTypeCache.set(relCacheKey, relType);
+        cacheCtx.objectTypeCache.set(targetTableName, relType);
       }
 
       if (isOne) {
@@ -521,15 +644,35 @@ const generateSelectFields = <TWithOrder extends boolean>(
       ]);
     }
 
-    // Assign into the pre-declared variable — the thunk above will see this value.
-    relationFields = Object.fromEntries(rawRelationFields);
+    const builtRelationFields = Object.fromEntries(rawRelationFields);
+
+    // Only the root call should populate the container — non-root calls are temporary traversals
+    // to collect filters/order for args and should not overwrite the canonical relation fields.
+    if (isRootCall) {
+      // Populate the container so that the thunk on the GraphQLObjectType shell (whether it was
+      // created here or pre-registered by another table's relation traversal) picks up the fields.
+      container.fields = builtRelationFields;
+      cacheCtx.fullyBuiltTables.add(tableName);
+    }
+
+    return {
+      order,
+      filters,
+      tableFields,
+      relationFields: builtRelationFields,
+    } as SelectData<TWithOrder>;
+  }
+
+  // No relation entries — mark as fully built if root call.
+  if (isRootCall) {
+    cacheCtx.fullyBuiltTables.add(tableName);
   }
 
   return {
     order,
     filters,
     tableFields,
-    relationFields,
+    relationFields: {},
   } as SelectData<TWithOrder>;
 };
 
@@ -540,6 +683,9 @@ export const generateTableTypes = <WithReturning extends boolean>(
   withReturning: WithReturning,
   relationsDepthLimit: number | undefined,
   cacheCtx: TypeCacheCtx,
+  singularTypes: boolean = false,
+  insertPrefix: string = 'insertInto',
+  updatePrefix: string = 'update',
 ): GeneratedTableTypes<WithReturning> => {
   const { tableFields, relationFields, filters, order } = generateSelectFields(
     tables,
@@ -550,6 +696,7 @@ export const generateTableTypes = <WithReturning extends boolean>(
     true,
     relationsDepthLimit,
     cacheCtx,
+    singularTypes,
   );
 
   const table = tables[tableName]!;
@@ -572,38 +719,40 @@ export const generateTableTypes = <WithReturning extends boolean>(
     ]),
   );
 
-  // Insert/update input types: ${capitalize(tableName)}InsertInput / ${capitalize(tableName)}UpdateInput
+  // Insert/update input types: ${capitalize(insertPrefix)}${toTypeName(tableName)}Input / ${capitalize(updatePrefix)}${toTypeName(tableName)}Input
   const insertInput = new GraphQLInputObjectType({
-    name: `${capitalize(tableName)}InsertInput`,
+    name: `${capitalize(insertPrefix)}${toTypeName(tableName, singularTypes)}Input`,
     fields: insertFields,
   });
 
   const updateInput = new GraphQLInputObjectType({
-    name: `${capitalize(tableName)}UpdateInput`,
+    name: `${capitalize(updatePrefix)}${toTypeName(tableName, singularTypes)}Input`,
     fields: updateFields,
   });
 
-  // Select type: ${capitalize(tableName)}SelectItem (with relation fields)
+  // Select type: ${toTypeName(tableName)} (with relation fields)
   // Reuse the cached shell created in generateSelectFields.
   const selectSingleOutput =
     cacheCtx.objectTypeCache.get(tableName) ??
     new GraphQLObjectType({
-      name: `${capitalize(tableName)}SelectItem`,
+      name: toTypeName(tableName, singularTypes),
       fields: { ...tableFields, ...relationFields },
     });
 
   const selectArrOutput = new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput)));
 
   // Mutation return type: ${capitalize(tableName)}Item (table columns only, no relations)
-  const singleTableItemOutput = withReturning
-    ? new GraphQLObjectType({
-        name: `${capitalize(tableName)}Item`,
-        fields: tableFields,
-      })
-    : undefined;
+  //   const singleTableItemOutput = withReturning
+  //     ? new GraphQLObjectType({
+  //         name: `${capitalize(tableName)}`,
+  // //         name: `${capitalize(tableName)}Item`,
+  //         fields: tableFields,
+  //       })
+  //     : undefined;
 
   const arrTableItemOutput = withReturning
-    ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)))
+    ? //     ? new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(singleTableItemOutput!)))
+      new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(selectSingleOutput!)))
     : undefined;
 
   const inputs = {
@@ -618,7 +767,8 @@ export const generateTableTypes = <WithReturning extends boolean>(
       ? {
           selectSingleOutput,
           selectArrOutput,
-          singleTableItemOutput: singleTableItemOutput!,
+          singleTableItemOutput: selectSingleOutput!,
+          //           singleTableItemOutput: singleTableItemOutput!,
           arrTableItemOutput: arrTableItemOutput!,
         }
       : {
@@ -798,10 +948,11 @@ const extractRelationsParamsInner = (
   tableName: string,
   typeName: string,
   originField: ResolveTree,
+  singularTypes: boolean = false,
   _isInitial: boolean = false,
 ) => {
-  const relations = relationMap[tableName];
-  if (!relations) {
+  const relationsForTable = relationMap[tableName];
+  if (!relationsForTable) {
     return undefined;
   }
 
@@ -812,9 +963,9 @@ const extractRelationsParamsInner = (
 
   const args: Record<string, Partial<ProcessedTableSelectArgs>> = {};
 
-  for (const [relName, { targetTableName }] of Object.entries(relations)) {
-    // The relation type name: ${capitalize(tableName)}${capitalize(relName)}Relation
-    const relTypeName = `${capitalize(tableName)}${capitalize(relName)}Relation`;
+  for (const [relName, { targetTableName }] of Object.entries(relationsForTable)) {
+    // The relation field resolves to the target table's own type, e.g. "Posts" not "UsersPostsRelation".
+    const relTypeName = toTypeName(targetTableName, singularTypes);
     // Look up by field name OR by alias (when the caller uses an alias for the relation).
     // graphql-parse-resolve-info keys fieldsByTypeName entries by alias.
     const field = baseField[relName] ?? Object.values(baseField).find((f) => (f as ResolveTree).name === relName);
@@ -857,7 +1008,7 @@ const extractRelationsParamsInner = (
     thisRecord.limit = limit;
 
     const relWith = relationField
-      ? extractRelationsParamsInner(relationMap, tables, targetTableName, relTypeName, relationField)
+      ? extractRelationsParamsInner(relationMap, tables, targetTableName, relTypeName, relationField, singularTypes)
       : undefined;
     thisRecord.with = relWith;
 
@@ -873,10 +1024,11 @@ export const extractRelationsParams = (
   tableName: string,
   info: ResolveTree | undefined,
   typeName: string,
+  singularTypes: boolean = false,
 ): Record<string, Partial<ProcessedTableSelectArgs>> | undefined => {
   if (!info) {
     return undefined;
   }
 
-  return extractRelationsParamsInner(relationMap, tables, tableName, typeName, info, true);
+  return extractRelationsParamsInner(relationMap, tables, tableName, typeName, info, singularTypes, true);
 };

@@ -234,6 +234,13 @@ export const remapFromGraphQLCore = (value: any, column: Column, columnName: str
     }
 
     default: {
+      // graphql-js coerces input object types using Object.create(null), producing
+      // null-prototype objects. Drizzle's internal is() check accesses
+      // Object.getPrototypeOf(value).constructor and throws for null-prototype objects.
+      // Convert to a plain object so drizzle can process it safely.
+      if (typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === null) {
+        return Object.assign({}, value);
+      }
       return value;
     }
   }

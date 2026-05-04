@@ -1,5 +1,5 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import { is, type Relation, type Table } from 'drizzle-orm';
+import { is, type Table } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
 import { type BaseSQLiteDatabase, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, GraphQLResolveInfo, ThunkObjMap } from 'graphql';
@@ -16,15 +16,22 @@ import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  buildNamedRelations,
   extractFilters,
   extractOrderBy,
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  type TablesRelationalConfig,
   type TypeCacheCtx,
 } from '../builders/common.ts';
-import { capitalize, uncapitalize } from '../case-ops/index.ts';
+import { capitalize, singularize, uncapitalize } from '../case-ops/index.ts';
+
+/** Produce the GraphQL object type name for a table, optionally singularized. */
+const toTypeName = (name: string, singular: boolean): string =>
+  singular ? capitalize(singularize(name)) : capitalize(name);
+
 import {
   remapFromGraphQLArrayInput,
   remapFromGraphQLSingleInput,
@@ -40,9 +47,11 @@ const generateSelectArray = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  _listSuffix: string,
+  listSuffix: string,
+  singularTypes: boolean,
 ): CreatedResolver => {
-  const queryName = `${uncapitalize(tableName)}`;
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${listSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -67,7 +76,7 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = toTypeName(tableName, singularTypes);
   const table = tables[tableName]!;
 
   return {
@@ -89,7 +98,7 @@ const generateSelectArray = (
           orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
           where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes)
             : undefined,
         });
 
@@ -115,9 +124,11 @@ const generateSelectSingle = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  _singleSuffix: string,
+  singleSuffix: string,
+  singularTypes: boolean,
 ): CreatedResolver => {
-  const queryName = `${uncapitalize(tableName)}Single`;
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${singleSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -139,7 +150,7 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = toTypeName(tableName, singularTypes);
   const table = tables[tableName]!;
 
   return {
@@ -160,7 +171,7 @@ const generateSelectSingle = (
           orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
           where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes)
             : undefined,
         });
 
@@ -187,9 +198,10 @@ const generateInsertArray = (
   tableName: string,
   table: SQLiteTable,
   baseType: GraphQLInputObjectType,
+  singularTypes: boolean = false,
 ): CreatedResolver => {
   const queryName = `insertInto${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = toTypeName(tableName, singularTypes);
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -235,9 +247,11 @@ const generateInsertSingle = (
   tableName: string,
   table: SQLiteTable,
   baseType: GraphQLInputObjectType,
+  singularTypes: boolean = false,
 ): CreatedResolver => {
-  const queryName = `insertInto${capitalize(tableName)}Single`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const queryEntityBase = singularTypes ? singularize(capitalize(tableName)) : capitalize(tableName);
+  const queryName = singularTypes ? `insertInto${queryEntityBase}` : `insertInto${queryEntityBase}Single`;
+  const typeName = toTypeName(tableName, singularTypes);
 
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -284,9 +298,10 @@ const generateUpdate = (
   table: SQLiteTable,
   setArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
+  singularTypes: boolean = false,
 ): CreatedResolver => {
   const queryName = `update${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = toTypeName(tableName, singularTypes);
 
   const queryArgs = {
     set: {
@@ -345,9 +360,10 @@ const generateDelete = (
   tableName: string,
   table: SQLiteTable,
   filterArgs: GraphQLInputObjectType,
+  singularTypes: boolean = false,
 ): CreatedResolver => {
   const queryName = `deleteFrom${capitalize(tableName)}`;
-  const typeName = `${capitalize(tableName)}Item`;
+  const typeName = toTypeName(tableName, singularTypes);
 
   const queryArgs = {
     where: {
@@ -393,70 +409,6 @@ const generateDelete = (
   };
 };
 
-/** Shape of the relational config from drizzle-orm v1 db._.relations */
-interface TableRelationalConfig {
-  table: Table;
-  name: string;
-  relations: Record<string, Relation<string>>;
-}
-type TablesRelationalConfig = Record<string, TableRelationalConfig>;
-
-/**
- * Build namedRelations from drizzle-orm v1 TablesRelationalConfig.
- *
- * In drizzle-orm 1.0, db._.relations is a Record where each key is the
- * schema variable name (e.g. "Users") and the value has { table, name, relations }.
- * Each relation has a referencedTable property we can match against tableEntries.
- */
-const buildNamedRelations = (
-  relations: TablesRelationalConfig,
-  tableEntries: [string, Table][],
-): Record<string, Record<string, TableNamedRelations>> => {
-  const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
-
-  for (const [relTableName, relConfig] of Object.entries(relations)) {
-    if (!relConfig?.relations) {
-      continue;
-    }
-
-    const namedConfig: Record<string, TableNamedRelations> = {};
-
-    for (const [innerRelName, innerRelValue] of Object.entries(relConfig.relations)) {
-      // drizzle-orm v1 uses `targetTable` (not `referencedTable`)
-      // and provides `targetTableName` directly.
-      const targetTable = (innerRelValue as any).targetTable ?? (innerRelValue as any).referencedTable;
-      const directTargetName = (innerRelValue as any).targetTableName as string | undefined;
-
-      let targetTableName: string | undefined;
-
-      if (directTargetName) {
-        // v1: use the direct name to find the schema key
-        const targetEntry = tableEntries.find(([key]) => key === directTargetName);
-        targetTableName = targetEntry?.[0];
-      } else if (targetTable) {
-        // fallback: match by object reference
-        const targetEntry = tableEntries.find(([, tableValue]) => tableValue === targetTable);
-        targetTableName = targetEntry?.[0];
-      }
-
-      if (!targetTableName) {
-        continue;
-      }
-
-      namedConfig[innerRelName] = {
-        relation: innerRelValue,
-        targetTableName,
-      };
-    }
-
-    if (Object.keys(namedConfig).length > 0) {
-      namedRelations[relTableName] = namedConfig;
-    }
-  }
-
-  return namedRelations;
-};
-
 export const generateSchemaData = <
   TDrizzleInstance extends BaseSQLiteDatabase<any, any, any, any>,
   TSchema extends Record<string, Table | unknown>,
@@ -465,8 +417,9 @@ export const generateSchemaData = <
   schema: TSchema,
   relations: TablesRelationalConfig,
   relationsDepthLimit: number | undefined,
-  _prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
+  prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
+  singularTypes: boolean = false,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
@@ -488,6 +441,8 @@ export const generateSchemaData = <
   const cacheCtx: TypeCacheCtx = {
     genericFilterCache: new Map(),
     objectTypeCache: new Map(),
+    relationFieldContainers: new Map(),
+    fullyBuiltTables: new Set(),
     relationTypeCache: new Map(),
   };
 
@@ -496,7 +451,17 @@ export const generateSchemaData = <
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, true, relationsDepthLimit, cacheCtx),
+      generateTableTypes(
+        tableName,
+        tables,
+        namedRelations,
+        true,
+        relationsDepthLimit,
+        cacheCtx,
+        singularTypes,
+        prefixes.insert,
+        prefixes.update,
+      ),
     ]),
   );
 
@@ -515,6 +480,7 @@ export const generateSchemaData = <
       tableOrder,
       tableFilters,
       suffixes.list,
+      singularTypes,
     );
     const selectSingleGenerated = generateSelectSingle(
       db,
@@ -524,11 +490,37 @@ export const generateSchemaData = <
       tableOrder,
       tableFilters,
       suffixes.single,
+      singularTypes,
     );
-    const insertArrGenerated = generateInsertArray(db, tableName, schema[tableName] as SQLiteTable, insertInput);
-    const insertSingleGenerated = generateInsertSingle(db, tableName, schema[tableName] as SQLiteTable, insertInput);
-    const updateGenerated = generateUpdate(db, tableName, schema[tableName] as SQLiteTable, updateInput, tableFilters);
-    const deleteGenerated = generateDelete(db, tableName, schema[tableName] as SQLiteTable, tableFilters);
+    const insertArrGenerated = generateInsertArray(
+      db,
+      tableName,
+      schema[tableName] as SQLiteTable,
+      insertInput,
+      singularTypes,
+    );
+    const insertSingleGenerated = generateInsertSingle(
+      db,
+      tableName,
+      schema[tableName] as SQLiteTable,
+      insertInput,
+      singularTypes,
+    );
+    const updateGenerated = generateUpdate(
+      db,
+      tableName,
+      schema[tableName] as SQLiteTable,
+      updateInput,
+      tableFilters,
+      singularTypes,
+    );
+    const deleteGenerated = generateDelete(
+      db,
+      tableName,
+      schema[tableName] as SQLiteTable,
+      tableFilters,
+      singularTypes,
+    );
 
     queries[selectArrGenerated.name] = {
       type: selectArrOutput,

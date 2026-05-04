@@ -24,7 +24,12 @@ import {
   generateTableTypes,
   type TypeCacheCtx,
 } from '../builders/common.ts';
-import { capitalize, uncapitalize } from '../case-ops/index.ts';
+import { capitalize, singularize, uncapitalize } from '../case-ops/index.ts';
+
+/** Produce the GraphQL object type name for a table, optionally singularized. */
+const toTypeName = (name: string, singular: boolean): string =>
+  singular ? capitalize(singularize(name)) : capitalize(name);
+
 import {
   remapFromGraphQLArrayInput,
   remapFromGraphQLSingleInput,
@@ -41,6 +46,7 @@ const generateSelectArray = (
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
   listSuffix: string,
+  singularTypes: boolean,
 ): CreatedResolver => {
   const queryName = `${uncapitalize(tableName)}${listSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
@@ -67,7 +73,7 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = toTypeName(tableName, singularTypes);
   const table = tables[tableName]!;
 
   return {
@@ -89,7 +95,7 @@ const generateSelectArray = (
           orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
           where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes)
             : undefined,
         });
 
@@ -116,6 +122,7 @@ const generateSelectSingle = (
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
   singleSuffix: string,
+  singularTypes: boolean,
 ): CreatedResolver => {
   const queryName = `${uncapitalize(tableName)}${singleSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
@@ -139,7 +146,7 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = `${capitalize(tableName)}SelectItem`;
+  const typeName = toTypeName(tableName, singularTypes);
   const table = tables[tableName]!;
 
   return {
@@ -160,7 +167,7 @@ const generateSelectSingle = (
           orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
           where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName)
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes)
             : undefined,
         });
 
@@ -418,8 +425,9 @@ export const generateSchemaData = <
   schema: TSchema,
   relations: TablesRelationalConfig,
   relationsDepthLimit: number | undefined,
-  _prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
+  prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
+  singularTypes: boolean = false,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
@@ -441,6 +449,8 @@ export const generateSchemaData = <
   const cacheCtx: TypeCacheCtx = {
     genericFilterCache: new Map(),
     objectTypeCache: new Map(),
+    relationFieldContainers: new Map(),
+    fullyBuiltTables: new Set(),
     relationTypeCache: new Map(),
   };
 
@@ -449,7 +459,17 @@ export const generateSchemaData = <
   const gqlSchemaTypes = Object.fromEntries(
     Object.entries(tables).map(([tableName, _table]) => [
       tableName,
-      generateTableTypes(tableName, tables, namedRelations, false, relationsDepthLimit, cacheCtx),
+      generateTableTypes(
+        tableName,
+        tables,
+        namedRelations,
+        false,
+        relationsDepthLimit,
+        cacheCtx,
+        singularTypes,
+        prefixes.insert,
+        prefixes.update,
+      ),
     ]),
   );
 
@@ -479,6 +499,7 @@ export const generateSchemaData = <
       tableOrder,
       tableFilters,
       suffixes.list,
+      singularTypes,
     );
     const selectSingleGenerated = generateSelectSingle(
       db,
@@ -488,6 +509,7 @@ export const generateSchemaData = <
       tableOrder,
       tableFilters,
       suffixes.single,
+      singularTypes,
     );
     const insertArrGenerated = generateInsertArray(db, tableName, schema[tableName] as MySqlTable, insertInput);
     const insertSingleGenerated = generateInsertSingle(db, tableName, schema[tableName] as MySqlTable, insertInput);
