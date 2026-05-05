@@ -195,6 +195,8 @@ export const drizzleRelationToGraphQLInsertType = (tables: Record<string, Table>
   //   }
   //
   //   return typeDesc as ConvertedColumn<TIsInput>;
+
+  return null;
 };
 
 export const drizzleColumnToGraphQLType = <TColumn extends Column, TIsInput extends boolean>(
