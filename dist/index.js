@@ -225,6 +225,9 @@ ${e instanceof Error ? e.message : "Unknown error"}`
       }
     }
     default: {
+      if (typeof value === "object" && value !== null && Object.getPrototypeOf(value) === null) {
+        return Object.assign({}, value);
+      }
       return value;
     }
   }
@@ -1396,8 +1399,8 @@ import {
 import { parseResolveInfo as parseResolveInfo2 } from "graphql-parse-resolve-info";
 var toTypeName3 = (name, singular) => singular ? capitalize(singularize(name)) : capitalize(name);
 var generateSelectArray2 = (db, tableName, tables, relationMap, orderArgs, filterArgs, listSuffix, singularTypes) => {
-  const queryEntityBase = uncapitalize(tableName);
-  const queryName = `${queryEntityBase}`;
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${listSuffix}`;
   const queryBase = db.query[tableName];
   const queryArgs = {
     offset: {
@@ -1465,8 +1468,8 @@ var generateSelectArray2 = (db, tableName, tables, relationMap, orderArgs, filte
   };
 };
 var generateSelectSingle2 = (db, tableName, tables, relationMap, orderArgs, filterArgs, singleSuffix, singularTypes) => {
-  const queryEntityBase = singularize(uncapitalize(tableName));
-  const queryName = `${queryEntityBase}`;
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${singleSuffix}`;
   const queryBase = db.query[tableName];
   const queryArgs = {
     offset: {
@@ -1569,8 +1572,8 @@ var generateInsertArray2 = (db, tableName, table, baseType, prefix, conflictDoNo
   };
 };
 var generateInsertSingle2 = (db, tableName, table, baseType, prefix, conflictDoNothing = false, singularTypes = false) => {
-  const queryEntityBase = singularize(capitalize(tableName));
-  const queryName = `${prefix}${queryEntityBase}`;
+  const queryEntityBase = singularTypes ? singularize(capitalize(tableName)) : capitalize(tableName);
+  const queryName = singularTypes ? `${prefix}${queryEntityBase}` : `${prefix}${queryEntityBase}Single`;
   const typeName = toTypeName3(tableName, singularTypes);
   const queryArgs = {
     values: {
@@ -1836,8 +1839,9 @@ import {
 } from "graphql";
 import { parseResolveInfo as parseResolveInfo3 } from "graphql-parse-resolve-info";
 var toTypeName4 = (name, singular) => singular ? capitalize(singularize(name)) : capitalize(name);
-var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, _listSuffix, singularTypes) => {
-  const queryName = `${uncapitalize(tableName)}`;
+var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, listSuffix, singularTypes) => {
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${listSuffix}`;
   const queryBase = db.query[tableName];
   if (!queryBase) {
     throw new Error(
@@ -1890,8 +1894,9 @@ var generateSelectArray3 = (db, tableName, tables, relationMap, orderArgs, filte
     args: queryArgs
   };
 };
-var generateSelectSingle3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, _singleSuffix, singularTypes) => {
-  const queryName = `${uncapitalize(tableName)}Single`;
+var generateSelectSingle3 = (db, tableName, tables, relationMap, orderArgs, filterArgs, singleSuffix, singularTypes) => {
+  const queryEntityBase = singularTypes ? singularize(uncapitalize(tableName)) : uncapitalize(tableName);
+  const queryName = `${queryEntityBase}${singleSuffix}`;
   const queryBase = db.query[tableName];
   if (!queryBase) {
     throw new Error(
@@ -1979,7 +1984,8 @@ var generateInsertArray3 = (db, tableName, table, baseType, singularTypes = fals
   };
 };
 var generateInsertSingle3 = (db, tableName, table, baseType, singularTypes = false) => {
-  const queryName = `insertInto${capitalize(tableName)}Single`;
+  const queryEntityBase = singularTypes ? singularize(capitalize(tableName)) : capitalize(tableName);
+  const queryName = singularTypes ? `insertInto${queryEntityBase}` : `insertInto${queryEntityBase}Single`;
   const typeName = toTypeName4(tableName, singularTypes);
   const queryArgs = {
     values: {
