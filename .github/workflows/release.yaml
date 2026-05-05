@@ -34,7 +34,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Test (PGlite + SQLite — no Docker required)
-        run: npx vitest run tests/pglite tests/sqlite.test.ts tests/sqlite-custom.test.ts
+        run: mkdir -p tests/.temp && npx vitest run tests/pglite tests/sqlite.test.ts tests/sqlite-custom.test.ts
 
       - name: Release
         env:
