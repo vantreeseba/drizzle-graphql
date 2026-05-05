@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/vantreeseba/drizzle-graphql/compare/v1.0.0...v1.0.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* disable semantic-release GitHub PR/issue comments ([f8829f5](https://github.com/vantreeseba/drizzle-graphql/commit/f8829f5a3b3724b011fbdfd9934cf05d37080134)), closes [#9](https://github.com/vantreeseba/drizzle-graphql/issues/9)
+
 # 1.0.0 (2026-05-05)
 
 
