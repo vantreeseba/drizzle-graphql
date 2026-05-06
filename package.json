@@ -54,7 +54,7 @@
     "dockerode": "^4.0.2",
     "dprint": "^0.45.1",
     "drizzle-kit": "^0.24.0",
-    "drizzle-orm": "^1.0.0-beta.1",
+    "drizzle-orm": "^1.0.0-rc.2",
     "get-port": "^7.0.0",
     "glob": "^10.3.10",
     "graphql-parse-resolve-info": "^4.14.1",
@@ -105,7 +105,7 @@
   },
   "homepage": "https://github.com/vantreeseba/drizzle-graphql",
   "peerDependencies": {
-    "drizzle-orm": "^1.0.0-beta.1",
+    "drizzle-orm": "^1.0.0-rc.2",
     "graphql": ">=16.3.0",
     "graphql-parse-resolve-info": "^4.13.0",
     "graphql-scalars": "^1.25.0"

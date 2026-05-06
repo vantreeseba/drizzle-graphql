@@ -42,12 +42,21 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
   db: TDbClient,
   config?: BuildSchemaConfig,
 ): GeneratedData<TDbClient> => {
-  const schema = db._.fullSchema;
   const relations = db._.relations;
+  // drizzle-orm v1 rc.2 removed fullSchema from PgAsyncDatabase._
+  // For PG, reconstruct a schema-like map from db._.relations (each entry has { table }).
+  // MySQL and SQLite still expose fullSchema directly.
+  const schema =
+    (db._ as any).fullSchema ??
+    Object.fromEntries(
+      Object.entries(relations as Record<string, any>)
+        .filter(([, config]) => config?.table != null)
+        .map(([key, config]) => [key, config.table]),
+    );
 
-  if (!schema) {
+  if (!schema || !Object.keys(schema).length) {
     throw new Error(
-      "Drizzle-GraphQL Error: Schema not found in drizzle instance. Make sure you're using drizzle-orm v0.30.9 or above and schema is passed to drizzle constructor!",
+      "Drizzle-GraphQL Error: Schema not found in drizzle instance. Pass relations (from buildRelations/defineRelations) to the drizzle constructor so drizzle-graphql can detect your tables.",
     );
   }
 
