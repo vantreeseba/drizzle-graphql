@@ -16,3 +16,4 @@ tests/Migrations
 drizzle.test-heavy.ts
 changes.md
 tests/isolated.test.ts
+coverage
