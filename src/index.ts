@@ -12,14 +12,6 @@ import {
 import type { AnyDrizzleDB, BuildSchemaConfig, GeneratedData } from './types.ts';
 import { generateMySQL, generatePG, generateSQLite } from './util/builders/index.ts';
 
-export {
-  createRelationResolverFactory,
-  extractFilters,
-  extractOrderBy,
-  extractRelationJoinColumns,
-} from './util/builders/common.ts';
-export type { RelationResolverFactory } from './util/builders/common.ts';
-
 export type {
   AnyDrizzleDB,
   BuildSchemaConfig,
@@ -41,6 +33,14 @@ export type {
   SelectSingleResolver,
   UpdateResolver,
 } from './types.ts';
+export type { RelationResolverFactory } from './util/builders/common.ts';
+export {
+  createRelationResolverFactory,
+  extractFilters,
+  extractOrderBy,
+  extractRelationJoinColumns,
+} from './util/builders/common.ts';
+export type { TableNamedRelations } from './util/builders/types.ts';
 
 type ObjMap<T> = Record<string, T>;
 
@@ -62,7 +62,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
 
   if (!schema || !Object.keys(schema).length) {
     throw new Error(
-      "Drizzle-GraphQL Error: Schema not found in drizzle instance. Pass relations (from buildRelations/defineRelations) to the drizzle constructor so drizzle-graphql can detect your tables.",
+      'Drizzle-GraphQL Error: Schema not found in drizzle instance. Pass relations (from buildRelations/defineRelations) to the drizzle constructor so drizzle-graphql can detect your tables.',
     );
   }
 
