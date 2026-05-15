@@ -38,6 +38,7 @@ import {
   or,
   type SQL,
 } from 'drizzle-orm';
+import type { GraphQLFieldResolver } from 'graphql';
 import {
   GraphQLBoolean,
   GraphQLEnumType,
@@ -51,8 +52,9 @@ import {
 } from 'graphql';
 import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { capitalize, singularize } from '../case-ops/index.ts';
-import { remapFromGraphQLCore } from '../data-mappers/index.ts';
-import { drizzleColumnToGraphQLType, drizzleRelationToGraphQLInsertType } from '../type-converter/index.ts';
+import { remapFromGraphQLCore, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
+import { getOrCreateLoader } from '../batch-loader/index.ts';
+import { drizzleColumnToGraphQLType } from '../type-converter/index.ts';
 import type {
   ConvertedColumn,
   ConvertedInputColumn,
@@ -145,6 +147,160 @@ export const buildNamedRelations = (
 
   return namedRelations;
 };
+
+/**
+ * Extracts the join column info from a drizzle-orm v1 Relation object.
+ * Returns the JS property name of the local column on the parent table and the
+ * Column object for the foreign column on the target table, or undefined if the
+ * relation internals are not accessible.
+ */
+export const extractRelationJoinColumns = (
+  relEntry: TableNamedRelations,
+  parentTable: Table,
+  targetTable: Table,
+): { localColPropName: string; foreignCol: Column; foreignColPropName: string } | undefined => {
+  const rel = (relEntry as any).relation ?? relEntry;
+  const sourceColumns: any[] | undefined = rel.sourceColumns;
+  const targetColumns: any[] | undefined = rel.targetColumns;
+
+  if (!sourceColumns?.length || !targetColumns?.length) { return undefined; }
+
+  const sourceCol = sourceColumns[0];
+  const targetCol = targetColumns[0];
+
+  const parentCols = getColumns(parentTable);
+  const localColPropName = Object.entries(parentCols).find(([, c]) => c === sourceCol)?.[0];
+
+  const targetCols = getColumns(targetTable);
+  const foreignColPropName = Object.entries(targetCols).find(([, c]) => c === targetCol)?.[0];
+
+  if (!localColPropName || !foreignColPropName) { return undefined; }
+
+  return { localColPropName, foreignCol: targetCol, foreignColPropName };
+};
+
+export type RelationResolverFactory = (params: {
+  tableName: string;
+  relationName: string;
+  relEntry: TableNamedRelations;
+  isOne: boolean;
+}) => GraphQLFieldResolver<any, any> | undefined;
+
+const directRelationQuery = async (
+  db: any,
+  targetTable: Table,
+  targetTableName: string,
+  foreignCol: Column,
+  localValue: any,
+  whereArg: any,
+  orderByArg: any,
+  limit: number | undefined,
+  offset: number | undefined,
+  isOne: boolean,
+): Promise<any> => {
+  const whereCondition = and(
+    eq(foreignCol, localValue),
+    whereArg ? extractFilters(targetTable, targetTableName, whereArg) : undefined,
+  );
+
+  let q = db.select().from(targetTable).where(whereCondition) as any;
+  if (orderByArg) { q = q.orderBy(...extractOrderBy(targetTable, orderByArg)); }
+  if (offset != null) { q = q.offset(offset); }
+  if (limit != null) { q = q.limit(limit); }
+  const rows = await q;
+  if (isOne) {
+    if (!rows[0]) { return null; }
+    return remapToGraphQLSingleOutput(rows[0], targetTableName, targetTable);
+  }
+  return remapToGraphQLArrayOutput(rows, targetTableName, targetTable);
+};
+
+/**
+ * Creates a RelationResolverFactory that generates field-level resolvers for each relation.
+ * Each resolver:
+ *   1. Returns pre-fetched data if the parent resolver already included it (eager path, zero cost).
+ *   2. When limit/offset args are present, falls back to a direct per-item query.
+ *   3. Otherwise batches all sibling resolver calls within the same GraphQL execution tick
+ *      into a single IN-clause query, eliminating N+1 database round-trips.
+ */
+export const createRelationResolverFactory = (
+  db: any,
+  tables: Record<string, Table>,
+): RelationResolverFactory =>
+  ({ tableName, relationName, relEntry, isOne }) => {
+    const parentTable = tables[tableName];
+    const targetTableName = relEntry.targetTableName;
+    const targetTable = tables[targetTableName];
+
+    if (!parentTable || !targetTable) { return undefined; }
+
+    const joinCols = extractRelationJoinColumns(relEntry, parentTable, targetTable);
+    if (!joinCols) { return undefined; }
+
+    const { localColPropName, foreignCol, foreignColPropName } = joinCols;
+
+    return async (parent, args, context) => {
+      // Eager path: the parent resolver pre-fetched this relation via Drizzle's `with`.
+      if (parent[relationName] !== undefined) {
+        return parent[relationName];
+      }
+
+      const localValue = parent[localColPropName];
+      if (localValue == null) { return isOne ? null : []; }
+
+      const { where: whereArg, orderBy: orderByArg, limit, offset } = (args ?? {}) as any;
+
+      // Pagination args prevent batching — execute a direct per-item query.
+      if (limit != null || offset != null) {
+        return directRelationQuery(
+          db,
+          targetTable,
+          targetTableName,
+          foreignCol,
+          localValue,
+          whereArg,
+          orderByArg,
+          limit,
+          offset,
+          isOne,
+        );
+      }
+
+      // Batch path: collect all sibling calls in this tick and execute one IN-clause query.
+      const argsKey = JSON.stringify({ where: whereArg ?? null, orderBy: orderByArg ?? null });
+      const loaderKey = `${tableName}::${relationName}::${argsKey}`;
+
+      const loader = getOrCreateLoader(context, loaderKey, async (parentIds: readonly any[]) => {
+        const uniqueIds = [...new Set(parentIds)];
+        const whereCondition = and(
+          inArray(foreignCol, uniqueIds),
+          whereArg ? extractFilters(targetTable, targetTableName, whereArg) : undefined,
+        );
+
+        // Use plain db.select() so column refs are never aliased — avoids drizzle-orm v1
+        // RQB aliasing requirements that would require referencing via aliasedTable proxy.
+        let q = db.select().from(targetTable).where(whereCondition) as any;
+        if (orderByArg) { q = q.orderBy(...extractOrderBy(targetTable, orderByArg)); }
+        const rows: any[] = await q;
+
+        // Group by FK value before remapping (remapping may delete null fields).
+        if (isOne) {
+          const byKey = new Map(rows.map((row: any) => [String(row[foreignColPropName]), row]));
+          remapToGraphQLArrayOutput(rows, targetTableName, targetTable);
+          return parentIds.map((id) => byKey.get(String(id)) ?? null);
+        }
+
+        const grouped = new Map<string, any[]>(uniqueIds.map((id) => [String(id), []]));
+        for (const row of rows) {
+          grouped.get(String(row[foreignColPropName]))?.push(row);
+        }
+        remapToGraphQLArrayOutput(rows, targetTableName, targetTable);
+        return parentIds.map((id) => grouped.get(String(id)) ?? []);
+      });
+
+      return loader.load(localValue);
+    };
+  };
 
 /** Per-call cache context — created fresh on each generateSchemaData call to avoid type name collisions. */
 export interface TypeCacheCtx {
@@ -368,7 +524,7 @@ const generateColumnFilterValues = (
   return mainType;
 };
 
-const orderMap = new WeakMap<Object, Record<string, ConvertedInputColumn>>();
+const orderMap = new WeakMap<object, Record<string, ConvertedInputColumn>>();
 const generateTableOrderCached = (table: Table) => {
   if (orderMap.has(table)) {
     return orderMap.get(table)!;
@@ -388,7 +544,7 @@ const generateTableOrderCached = (table: Table) => {
   return remapped;
 };
 
-const filterMap = new WeakMap<Object, Record<string, ConvertedInputColumn>>();
+const filterMap = new WeakMap<object, Record<string, ConvertedInputColumn>>();
 const generateTableFilterValuesCached = (table: Table, tableName: string, cacheCtx: TypeCacheCtx) => {
   if (filterMap.has(table)) {
     return filterMap.get(table)!;
@@ -411,7 +567,7 @@ const generateTableFilterValuesCached = (table: Table, tableName: string, cacheC
   return remapped;
 };
 
-const fieldMap = new WeakMap<Object, Record<string, ConvertedColumn>>();
+const fieldMap = new WeakMap<object, Record<string, ConvertedColumn>>();
 const generateTableSelectTypeFieldsCached = (table: Table, tableName: string): Record<string, ConvertedColumn> => {
   if (fieldMap.has(table)) {
     return fieldMap.get(table)!;
@@ -432,7 +588,7 @@ const generateTableSelectTypeFieldsCached = (table: Table, tableName: string): R
   return remapped;
 };
 
-const orderTypeMap = new WeakMap<Object, GraphQLInputObjectType>();
+const orderTypeMap = new WeakMap<object, GraphQLInputObjectType>();
 const generateTableOrderTypeCached = (table: Table, tableName: string, singularTypes: boolean) => {
   if (orderTypeMap.has(table)) {
     return orderTypeMap.get(table)!;
@@ -449,7 +605,7 @@ const generateTableOrderTypeCached = (table: Table, tableName: string, singularT
   return order;
 };
 
-const filterTypeMap = new WeakMap<Object, GraphQLInputObjectType>();
+const filterTypeMap = new WeakMap<object, GraphQLInputObjectType>();
 const generateTableFilterTypeCached = (
   table: Table,
   tableName: string,
@@ -501,10 +657,12 @@ const generateSelectFields = <TWithOrder extends boolean>(
   fromTableName: string,
   fromRelationName: string,
   withOrder: TWithOrder,
-  _relationsDepthLimit: number | undefined,
+  relationsDepthLimit: number | undefined,
   cacheCtx: TypeCacheCtx,
   singularTypes: boolean,
   usedTables: Set<string> = new Set(),
+  resolverFactory?: RelationResolverFactory,
+  currentDepth: number = 0,
 ): SelectData<TWithOrder> => {
   const table = tables[tableName]!;
   const order = withOrder ? generateTableOrderTypeCached(table, tableName, singularTypes) : undefined;
@@ -513,6 +671,19 @@ const generateSelectFields = <TWithOrder extends boolean>(
 
   const relationsForTable = relationMap[tableName];
   const relationEntries: [string, TableNamedRelations][] = relationsForTable ? Object.entries(relationsForTable) : [];
+
+  // Depth limit: stop generating relation fields once we reach the configured maximum.
+  // relationsDepthLimit: 0 → no relation fields on any type.
+  // relationsDepthLimit: N → each table's own root call (depth 0) generates its relations,
+  // but traversals beyond depth N stop, which prevents unbounded recursive generation.
+  if (relationsDepthLimit !== undefined && currentDepth >= relationsDepthLimit) {
+    return {
+      order,
+      filters,
+      tableFields,
+      relationFields: {},
+    } as SelectData<TWithOrder>;
+  }
 
   // If this table is already being processed (cycle), stop recursing.
   // Return just the base fields with no relation fields.
@@ -584,10 +755,12 @@ const generateSelectFields = <TWithOrder extends boolean>(
         tableName, // fromTableName for the relation type
         relationName, // fromRelationName for the relation type
         !isOne,
-        undefined,
+        relationsDepthLimit,
         cacheCtx,
         singularTypes,
         nextUsedTables,
+        resolverFactory,
+        currentDepth + 1,
       );
 
       // Use the target table's own GraphQL type directly instead of creating an intermediate relation type.
@@ -617,6 +790,8 @@ const generateSelectFields = <TWithOrder extends boolean>(
         cacheCtx.objectTypeCache.set(targetTableName, relType);
       }
 
+      const resolve = resolverFactory?.({ tableName, relationName, relEntry: relEntry as TableNamedRelations, isOne });
+
       if (isOne) {
         rawRelationFields.push([
           relationName,
@@ -625,6 +800,7 @@ const generateSelectFields = <TWithOrder extends boolean>(
             args: {
               where: { type: relSelectData.filters },
             },
+            resolve,
           },
         ]);
         continue;
@@ -640,6 +816,7 @@ const generateSelectFields = <TWithOrder extends boolean>(
             offset: { type: GraphQLInt },
             limit: { type: GraphQLInt },
           },
+          resolve,
         },
       ]);
     }
@@ -686,6 +863,7 @@ export const generateTableTypes = <WithReturning extends boolean>(
   singularTypes: boolean = false,
   insertPrefix: string = 'insertInto',
   updatePrefix: string = 'update',
+  resolverFactory?: RelationResolverFactory,
 ): GeneratedTableTypes<WithReturning> => {
   const { tableFields, relationFields, filters, order } = generateSelectFields(
     tables,
@@ -697,13 +875,14 @@ export const generateTableTypes = <WithReturning extends boolean>(
     relationsDepthLimit,
     cacheCtx,
     singularTypes,
+    new Set(),
+    resolverFactory,
+    0,
   );
 
   const table = tables[tableName]!;
   const columns = getColumns(table);
   const columnEntries = Object.entries(columns);
-
-  const _insertNested = drizzleRelationToGraphQLInsertType(tables, relationMap[tableName] ?? {});
 
   const insertFields = Object.fromEntries(
     columnEntries.map(([columnName, columnDescription]) => [
