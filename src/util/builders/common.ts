@@ -1011,66 +1011,30 @@ export const extractFiltersColumn = <TColumn extends Column>(
     return variants.length ? (variants.length > 1 ? or(...variants) : variants[0]) : undefined;
   }
 
+  const singleValueOps: Record<string, (...args: any[]) => SQL> = { eq, ne, gt, gte, lt, lte };
+  const stringValueOps: Record<string, (...args: any[]) => SQL> = { like, notLike, ilike, notIlike };
+  const arrayValueOps: Record<string, (...args: any[]) => SQL> = { inArray, notInArray };
+  const nullableOps: Record<string, (...args: any[]) => SQL> = { isNull, isNotNull };
+
   const variants = [] as SQL[];
   for (const [operatorName, operatorValue] of entries) {
     if (operatorValue === null || operatorValue === false) {
       continue;
     }
 
-    let operator: ((...args: any[]) => SQL) | undefined;
-    switch (operatorName as keyof FilterColumnOperatorsCore<TColumn>) {
-      case 'eq':
-        operator = operator ?? eq;
-      case 'ne':
-        operator = operator ?? ne;
-      case 'gt':
-        operator = operator ?? gt;
-      case 'gte':
-        operator = operator ?? gte;
-      case 'lt':
-        operator = operator ?? lt;
-      case 'lte': {
-        operator = operator ?? lte;
-
-        const singleValue = remapFromGraphQLCore(operatorValue, column, columnName);
-        variants.push(operator(column, singleValue));
-
-        break;
+    if (operatorName in singleValueOps) {
+      const singleValue = remapFromGraphQLCore(operatorValue, column, columnName);
+      variants.push(singleValueOps[operatorName]!(column, singleValue));
+    } else if (operatorName in stringValueOps) {
+      variants.push(stringValueOps[operatorName]!(column, operatorValue as string));
+    } else if (operatorName in arrayValueOps) {
+      if (!(operatorValue as any[]).length) {
+        throw new GraphQLError(`WHERE ${columnName}: Unable to use operator ${operatorName} with an empty array!`);
       }
-
-      case 'like':
-        operator = operator ?? like;
-      case 'notLike':
-        operator = operator ?? notLike;
-      case 'ilike':
-        operator = operator ?? ilike;
-      case 'notIlike':
-        operator = operator ?? notIlike;
-
-        variants.push(operator(column, operatorValue as string));
-
-        break;
-
-      case 'inArray':
-        operator = operator ?? inArray;
-      case 'notInArray': {
-        operator = operator ?? notInArray;
-
-        if (!(operatorValue as any[]).length) {
-          throw new GraphQLError(`WHERE ${columnName}: Unable to use operator ${operatorName} with an empty array!`);
-        }
-        const arrayValue = (operatorValue as any[]).map((val) => remapFromGraphQLCore(val, column, columnName));
-
-        variants.push(operator(column, arrayValue));
-        break;
-      }
-
-      case 'isNull':
-        operator = operator ?? isNull;
-      case 'isNotNull':
-        operator = operator ?? isNotNull;
-
-        variants.push(operator(column));
+      const arrayValue = (operatorValue as any[]).map((val) => remapFromGraphQLCore(val, column, columnName));
+      variants.push(arrayValueOps[operatorName]!(column, arrayValue));
+    } else if (operatorName in nullableOps) {
+      variants.push(nullableOps[operatorName]!(column));
     }
   }
 
