@@ -73,6 +73,12 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
 
   const singularTypes = config?.singularTypes ?? false;
 
+  if (suffixes.list === suffixes.single) {
+    throw new Error(
+      'Drizzle-GraphQL Error: List and single query suffixes cannot be the same. This would create conflicting GraphQL field names.',
+    );
+  }
+
   if (typeof config?.relationsDepthLimit === 'number') {
     if (config.relationsDepthLimit < 0) {
       throw new Error(
@@ -82,11 +88,6 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
     if (config.relationsDepthLimit !== ~~config.relationsDepthLimit) {
       throw new Error(
         'Drizzle-GraphQL Error: config.relationsDepthLimit is supposed to be nonnegative integer or undefined!',
-      );
-    }
-    if (suffixes.list === suffixes.single) {
-      throw new Error(
-        'Drizzle-GraphQL Error: List and single query suffixes cannot be the same. This would create conflicting GraphQL field names.',
       );
     }
   }
