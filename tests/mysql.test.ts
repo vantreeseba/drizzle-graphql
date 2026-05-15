@@ -3132,6 +3132,7 @@ describe.sequential('Returned data tests', () => {
             UpdateCustomersInput: z.instanceof(GraphQLInputObjectType),
           })
           .strict(),
+        fieldResolvers: z.record(z.string(), z.record(z.string(), z.function())).optional(),
       })
       .strict();
 

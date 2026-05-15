@@ -2829,6 +2829,7 @@ describe.sequential('Returned data tests', () => {
             UpdateTagsInput: z.instanceof(GraphQLInputObjectType),
           })
           .strict(),
+        fieldResolvers: z.record(z.string(), z.record(z.string(), z.function())).optional(),
       })
       .strict();
 
