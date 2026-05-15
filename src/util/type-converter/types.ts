@@ -1,6 +1,7 @@
 import type {
   GraphQLEnumType,
   GraphQLFieldConfig,
+  GraphQLFieldResolver,
   GraphQLInputObjectType,
   GraphQLList,
   GraphQLNonNull,
@@ -52,4 +53,5 @@ export type ConvertedRelationColumn = {
 
 export type ConvertedRelationColumnWithArgs = ConvertedRelationColumn & {
   args?: GraphQLFieldConfig<any, any>['args'];
+  resolve?: GraphQLFieldResolver<any, any>;
 };

@@ -1,5 +1,5 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import { is, type Table } from 'drizzle-orm';
+import { is, One, type Table } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
 import { type BaseSQLiteDatabase, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, GraphQLResolveInfo, ThunkObjMap } from 'graphql';
@@ -17,12 +17,14 @@ import { parseResolveInfo } from 'graphql-parse-resolve-info';
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
   buildNamedRelations,
+  createRelationResolverFactory,
   extractFilters,
   extractOrderBy,
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
 } from '../builders/common.ts';
@@ -436,6 +438,8 @@ export const generateSchemaData = <
   // Build namedRelations from the drizzle-orm v1 relations config.
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
 
+  const resolverFactory: RelationResolverFactory = createRelationResolverFactory(db, tables);
+
   // Fresh cache per generateSchemaData call — prevents type name collisions
   // when buildSchema() is called multiple times.
   const cacheCtx: TypeCacheCtx = {
@@ -461,6 +465,7 @@ export const generateSchemaData = <
         singularTypes,
         prefixes.insert,
         prefixes.update,
+        resolverFactory,
       ),
     ]),
   );
@@ -559,5 +564,16 @@ export const generateSchemaData = <
     outputs[singleTableItemOutput.name] = singleTableItemOutput;
   }
 
-  return { queries, mutations, inputs, types: outputs } as any;
+  const fieldResolvers: Record<string, Record<string, any>> = {};
+  for (const [tableName, tableRelations] of Object.entries(namedRelations)) {
+    const relResolvers: Record<string, any> = {};
+    for (const [relName, relEntry] of Object.entries(tableRelations)) {
+      const isOne = is((relEntry as any).relation ?? relEntry, One);
+      const resolver = resolverFactory({ tableName, relationName: relName, relEntry, isOne });
+      if (resolver) { relResolvers[relName] = resolver; }
+    }
+    if (Object.keys(relResolvers).length > 0) { fieldResolvers[tableName] = relResolvers; }
+  }
+
+  return { queries, mutations, inputs, types: outputs, fieldResolvers } as any;
 };

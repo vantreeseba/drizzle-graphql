@@ -1,5 +1,5 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import { is, type Relation, type Table } from 'drizzle-orm';
+import { is, One, type Table } from 'drizzle-orm';
 import { type MySqlDatabase, MySqlTable } from 'drizzle-orm/mysql-core';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, ThunkObjMap } from 'graphql';
@@ -17,11 +17,15 @@ import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  buildNamedRelations,
+  createRelationResolverFactory,
   extractFilters,
   extractOrderBy,
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   generateTableTypes,
+  type RelationResolverFactory,
+  type TablesRelationalConfig,
   type TypeCacheCtx,
 } from '../builders/common.ts';
 import { capitalize, singularize, uncapitalize } from '../case-ops/index.ts';
@@ -353,70 +357,6 @@ const generateDelete = (
   };
 };
 
-/** Shape of the relational config from drizzle-orm v1 db._.relations */
-interface TableRelationalConfig {
-  table: Table;
-  name: string;
-  relations: Record<string, Relation<string>>;
-}
-type TablesRelationalConfig = Record<string, TableRelationalConfig>;
-
-/**
- * Build namedRelations from drizzle-orm v1 TablesRelationalConfig.
- *
- * In drizzle-orm 1.0, db._.relations is a Record where each key is the
- * schema variable name (e.g. "Users") and the value has { table, name, relations }.
- * Each relation has a referencedTable property we can match against tableEntries.
- */
-const buildNamedRelations = (
-  relations: TablesRelationalConfig,
-  tableEntries: [string, Table][],
-): Record<string, Record<string, TableNamedRelations>> => {
-  const namedRelations: Record<string, Record<string, TableNamedRelations>> = {};
-
-  for (const [relTableName, relConfig] of Object.entries(relations)) {
-    if (!relConfig?.relations) {
-      continue;
-    }
-
-    const namedConfig: Record<string, TableNamedRelations> = {};
-
-    for (const [innerRelName, innerRelValue] of Object.entries(relConfig.relations)) {
-      // drizzle-orm v1 uses `targetTable` (not `referencedTable`)
-      // and provides `targetTableName` directly.
-      const targetTable = (innerRelValue as any).targetTable ?? (innerRelValue as any).referencedTable;
-      const directTargetName = (innerRelValue as any).targetTableName as string | undefined;
-
-      let targetTableName: string | undefined;
-
-      if (directTargetName) {
-        // v1: use the direct name to find the schema key
-        const targetEntry = tableEntries.find(([key]) => key === directTargetName);
-        targetTableName = targetEntry?.[0];
-      } else if (targetTable) {
-        // fallback: match by object reference
-        const targetEntry = tableEntries.find(([, tableValue]) => tableValue === targetTable);
-        targetTableName = targetEntry?.[0];
-      }
-
-      if (!targetTableName) {
-        continue;
-      }
-
-      namedConfig[innerRelName] = {
-        relation: innerRelValue,
-        targetTableName,
-      };
-    }
-
-    if (Object.keys(namedConfig).length > 0) {
-      namedRelations[relTableName] = namedConfig;
-    }
-  }
-
-  return namedRelations;
-};
-
 export const generateSchemaData = <
   TDrizzleInstance extends MySqlDatabase<any, any, any, any>,
   TSchema extends Record<string, Table | unknown>,
@@ -444,6 +384,8 @@ export const generateSchemaData = <
   // Build namedRelations from the drizzle-orm v1 relations config.
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
 
+  const resolverFactory: RelationResolverFactory = createRelationResolverFactory(db, tables);
+
   // Fresh cache per generateSchemaData call — prevents type name collisions
   // when buildSchema() is called multiple times.
   const cacheCtx: TypeCacheCtx = {
@@ -469,6 +411,7 @@ export const generateSchemaData = <
         singularTypes,
         prefixes.insert,
         prefixes.update,
+        resolverFactory,
       ),
     ]),
   );
@@ -552,5 +495,16 @@ export const generateSchemaData = <
     outputs[selectSingleOutput.name] = selectSingleOutput;
   }
 
-  return { queries, mutations, inputs, types: outputs } as any;
+  const fieldResolvers: Record<string, Record<string, any>> = {};
+  for (const [tableName, tableRelations] of Object.entries(namedRelations)) {
+    const relResolvers: Record<string, any> = {};
+    for (const [relName, relEntry] of Object.entries(tableRelations)) {
+      const isOne = is((relEntry as any).relation ?? relEntry, One);
+      const resolver = resolverFactory({ tableName, relationName: relName, relEntry, isOne });
+      if (resolver) { relResolvers[relName] = resolver; }
+    }
+    if (Object.keys(relResolvers).length > 0) { fieldResolvers[tableName] = relResolvers; }
+  }
+
+  return { queries, mutations, inputs, types: outputs, fieldResolvers } as any;
 };

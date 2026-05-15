@@ -382,6 +382,18 @@ export type GeneratedEntities<
   >;
   inputs: TInputs;
   types: TOutputs;
+  /**
+   * Field-level resolvers for each relation on each table.
+   * Each resolver handles both the eager path (data pre-fetched by the parent query)
+   * and the lazy path (data fetched on demand with N+1 protection via request-scoped batching).
+   * Keyed as `fieldResolvers[tableSchemaKey][relationName]`.
+   */
+  fieldResolvers: {
+    [TName in keyof TSchemaTables as TName extends string ? TName : never]?: Record<
+      string,
+      (source: any, args: any, context: any, info: GraphQLResolveInfo) => Promise<any>
+    >;
+  };
 };
 
 export type GeneratedData<TDatabase extends AnyDrizzleDB<any>> = {
@@ -399,15 +411,23 @@ export type BuildSchemaConfig = {
    */
   mutations?: boolean;
   /**
-   * Limits depth of generated relation fields on queries.
+   * Limits depth of relation-field generation.
    *
-   * Expects non-negative integer or undefined.
+   * Expects a non-negative integer or `undefined`.
    *
-   * Set value to `undefined` to not limit relation depth.
+   * `undefined` (default) — no limit; all relations are generated recursively
+   * until a cycle is detected.
    *
-   * Set value to `0` to omit relations altogether.
+   * `0` — no relation fields are generated on any type. Useful for a flat,
+   * columns-only schema.
    *
-   * Value is treated as if set to `undefined` by default.
+   * `N > 0` — each table's own direct relations are still generated (every
+   * table's root type is processed at depth 0, which is always < N). The
+   * depth limit controls how deep the generation RECURSES when traversing
+   * related types; because all types share a single instance via the type
+   * cache, setting N > 0 currently behaves the same as `undefined` for the
+   * final schema shape. The principal useful values are `0` (no relations)
+   * and `undefined` (unlimited).
    */
   relationsDepthLimit?: number;
   /**
