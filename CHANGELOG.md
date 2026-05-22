@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/vantreeseba/drizzle-graphql/compare/v1.0.2...v1.0.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* restore PG schema access for drizzle-orm v1 rc.2 ([ed07546](https://github.com/vantreeseba/drizzle-graphql/commit/ed07546470095303444e936ec82ce1b84221ef1c))
+
 ## [1.0.2](https://github.com/vantreeseba/drizzle-graphql/compare/v1.0.1...v1.0.2) (2026-05-06)
 
 
