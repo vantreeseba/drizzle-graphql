@@ -67,8 +67,8 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
   }
 
   const prefixes = {
-    insert: config?.prefixes?.insert ?? 'insertInto',
-    delete: config?.prefixes?.delete ?? 'deleteFrom',
+    insert: config?.prefixes?.insert ?? 'create',
+    delete: config?.prefixes?.delete ?? 'delete',
     update: config?.prefixes?.update ?? 'update',
   };
 
@@ -77,9 +77,12 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
     single: config?.suffixes?.single ?? 'Single',
   };
 
-  const singularTypes = config?.singularTypes ?? false;
+  const typeNameMapper = config?.typeNameMapper;
 
-  if (suffixes.list === suffixes.single) {
+  // When a typeNameMapper is provided, the mapper's singular/plural forms disambiguate the
+  // list and single fields even if the suffixes are identical (e.g. both '').
+  // Only enforce the suffix-collision check when no mapper is active.
+  if (!typeNameMapper && suffixes.list === suffixes.single) {
     throw new Error(
       'Drizzle-GraphQL Error: List and single query suffixes cannot be the same. This would create conflicting GraphQL field names.',
     );
@@ -107,7 +110,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
       config?.relationsDepthLimit,
       prefixes,
       suffixes,
-      singularTypes,
+      typeNameMapper,
     );
   } else if (is(db, PgAsyncDatabase)) {
     generatorOutput = generatePG(
@@ -118,7 +121,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
       prefixes,
       suffixes,
       config?.conflictDoNothing ?? false,
-      singularTypes,
+      typeNameMapper,
     );
   } else if (is(db, BaseSQLiteDatabase)) {
     generatorOutput = generateSQLite(
@@ -128,7 +131,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
       config?.relationsDepthLimit,
       prefixes,
       suffixes,
-      singularTypes,
+      typeNameMapper,
     );
   } else {
     throw new Error('Drizzle-GraphQL Error: Unknown database instance type');

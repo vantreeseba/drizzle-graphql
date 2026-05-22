@@ -263,9 +263,7 @@ export type MutationsCore<
   TOutputs extends Record<string, GraphQLObjectType>,
   IsReturnless extends boolean,
 > = {
-  [TName in keyof TSchemaTables as TName extends string
-    ? `insertInto${Capitalize<TName>}`
-    : never]: TName extends string
+  [TName in keyof TSchemaTables as TName extends string ? `create${Capitalize<TName>}` : never]: TName extends string
     ? {
         type: IsReturnless extends true
           ? TOutputs['MutationReturn'] extends GraphQLObjectType
@@ -282,7 +280,7 @@ export type MutationsCore<
     : never;
 } & {
   [TName in keyof TSchemaTables as TName extends string
-    ? `insertInto${Capitalize<TName>}Single`
+    ? `create${Capitalize<TName>}Single`
     : never]: TName extends string
     ? {
         type: IsReturnless extends true
@@ -321,9 +319,7 @@ export type MutationsCore<
       }
     : never;
 } & {
-  [TName in keyof TSchemaTables as TName extends string
-    ? `deleteFrom${Capitalize<TName>}`
-    : never]: TName extends string
+  [TName in keyof TSchemaTables as TName extends string ? `delete${Capitalize<TName>}` : never]: TName extends string
     ? {
         type: IsReturnless extends true
           ? TOutputs['MutationReturn'] extends GraphQLObjectType
@@ -433,12 +429,12 @@ export type BuildSchemaConfig = {
   /**
    * Customizes query name prefixes for generated GraphQL operations.
    *
-   * @default { list: '', single: 'Single' }
+   * @default { insert: 'create', delete: 'delete', update: 'update' }
    */
   prefixes?: {
-    /** Prefix for insert mutations (e.g., 'users' -> 'insertIntoUsers') */
+    /** Prefix for insert mutations (e.g., 'users' -> 'createUsers') */
     insert?: string;
-    /** Prefix for delete mutations (e.g., 'users' -> 'deleteFromUsers') */
+    /** Prefix for delete mutations (e.g., 'users' -> 'deleteUsers') */
     delete?: string;
     /** Prefix for update mutations (e.g., 'users' -> 'updateUsers') */
     update?: string;
@@ -461,10 +457,14 @@ export type BuildSchemaConfig = {
    */
   conflictDoNothing?: boolean;
   /**
-   * When true, all generated GraphQL object type names will use the singular form
-   * of the table name (e.g. `users` table → `User` type instead of `Users`).
+   * Optional mapper from table key to singular/plural name pair.
+   * When provided for a table, overrides the default (table key) naming for GraphQL type names,
+   * query field names, and mutation field names.
+   * Return `undefined` for tables that should use the default naming.
    *
-   * Defaults to false.
+   * Example: `(name) => name === 'users' ? { singular: 'user', plural: 'users' } : undefined`
+   * produces type `User`, queries `users` / `user`, mutations `createUsers` / `createUser` for
+   * the `users` table, and leaves other tables with their default names.
    */
-  singularTypes?: boolean;
+  typeNameMapper?: (tableName: string) => { singular: string; plural: string } | undefined;
 };

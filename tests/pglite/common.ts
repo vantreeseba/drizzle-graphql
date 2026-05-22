@@ -42,9 +42,17 @@ export const setupServer = async (ctx: Context, port: number, dataDir: string): 
   });
 
   const { schema: gqlSchema, entities } = buildSchema(ctx.db, {
-    singularTypes: true,
+    typeNameMapper: (name) => {
+      const map: Record<string, { singular: string; plural: string }> = {
+        Users: { singular: 'user', plural: 'users' },
+        Posts: { singular: 'post', plural: 'posts' },
+        Customers: { singular: 'customer', plural: 'customers' },
+        Tags: { singular: 'tag', plural: 'tags' },
+      };
+      return map[name];
+    },
     prefixes: { insert: 'create', delete: 'delete' },
-    suffixes: { single: '', list: 's' },
+    suffixes: { single: '', list: '' },
   });
   const yoga = createYoga({ schema: gqlSchema });
   const server = createServer(yoga);
@@ -86,9 +94,17 @@ export const setupMinimal = async (ctx: MinimalContext, dataDir: string): Promis
   });
 
   const { schema: gqlSchema, entities } = buildSchema(ctx.db, {
-    singularTypes: true,
+    typeNameMapper: (name) => {
+      const map: Record<string, { singular: string; plural: string }> = {
+        Users: { singular: 'user', plural: 'users' },
+        Posts: { singular: 'post', plural: 'posts' },
+        Customers: { singular: 'customer', plural: 'customers' },
+        Tags: { singular: 'tag', plural: 'tags' },
+      };
+      return map[name];
+    },
     prefixes: { insert: 'create', delete: 'delete' },
-    suffixes: { single: '', list: 's' },
+    suffixes: { single: '', list: '' },
   });
 
   ctx.schema = gqlSchema;

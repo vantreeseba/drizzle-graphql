@@ -334,7 +334,7 @@ describe.sequential('__typename only tests', async () => {
   it(`Update`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				updateCustomers(set: { isConfirmed: true, address: "Edited" }) {
+				updateCustomer(set: { isConfirmed: true, address: "Edited" }) {
 					__typename
 				}
 			}
@@ -342,7 +342,7 @@ describe.sequential('__typename only tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        updateCustomers: [
+        updateCustomer: [
           {
             __typename: 'Customer',
           },
@@ -357,7 +357,7 @@ describe.sequential('__typename only tests', async () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteCustomers {
+				deleteCustomer {
 					__typename
 				}
 			}
@@ -365,7 +365,7 @@ describe.sequential('__typename only tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteCustomers: [
+        deleteCustomer: [
           {
             __typename: 'Customer',
           },

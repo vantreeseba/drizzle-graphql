@@ -5,10 +5,18 @@ import { type Context, createCtx, setupServer, setupTables, teardownServer, tear
 const DATA_DIR = `./tests/.temp/pgdata-error-paths-${Date.now()}`;
 const ctx: Context = createCtx();
 
-beforeAll(async () => { await setupServer(ctx, 4360, DATA_DIR); });
-afterAll(async () => { await teardownServer(ctx, DATA_DIR); });
-beforeEach(async () => { await setupTables(ctx); });
-afterEach(async () => { await teardownTables(ctx); });
+beforeAll(async () => {
+  await setupServer(ctx, 4360, DATA_DIR);
+});
+afterAll(async () => {
+  await teardownServer(ctx, DATA_DIR);
+});
+beforeEach(async () => {
+  await setupTables(ctx);
+});
+afterEach(async () => {
+  await teardownTables(ctx);
+});
 
 describe.sequential('Filter extraction errors', () => {
   it('inArray with empty array returns a GraphQL error', async () => {
@@ -51,7 +59,7 @@ describe.sequential('Filter extraction errors', () => {
 describe.sequential('Mutation input validation errors', () => {
   it('update with empty set object returns a GraphQL error', async () => {
     const res = await ctx.gql.queryGql(`
-      mutation { updateUsers(set: {}, where: { id: { eq: 1 } }) { id } }
+      mutation { updateUser(set: {}, where: { id: { eq: 1 } }) { id } }
     `);
     expect(res.errors).toBeDefined();
     expect(res.errors![0]!.message).toMatch(/Unable to update with no values specified/);
@@ -68,20 +76,16 @@ describe.sequential('Mutation input validation errors', () => {
 
 describe('buildSchema config validation errors', () => {
   it('throws when list and single suffixes are equal (regardless of relationsDepthLimit)', () => {
-    expect(() =>
-      buildSchema(ctx.db, { suffixes: { list: 'X', single: 'X' } }),
-    ).toThrow(/List and single query suffixes cannot be the same/);
+    expect(() => buildSchema(ctx.db, { suffixes: { list: 'X', single: 'X' } })).toThrow(
+      /List and single query suffixes cannot be the same/,
+    );
   });
 
   it('throws when relationsDepthLimit is negative', () => {
-    expect(() =>
-      buildSchema(ctx.db, { relationsDepthLimit: -1 }),
-    ).toThrow(/nonnegative integer/);
+    expect(() => buildSchema(ctx.db, { relationsDepthLimit: -1 })).toThrow(/nonnegative integer/);
   });
 
   it('throws when relationsDepthLimit is a non-integer', () => {
-    expect(() =>
-      buildSchema(ctx.db, { relationsDepthLimit: 1.5 }),
-    ).toThrow(/nonnegative integer/);
+    expect(() => buildSchema(ctx.db, { relationsDepthLimit: 1.5 })).toThrow(/nonnegative integer/);
   });
 });

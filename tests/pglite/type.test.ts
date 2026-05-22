@@ -150,7 +150,7 @@ describe.sequential('Type tests', () => {
   it('Mutations', () => {
     expectTypeOf(ctx.entities.mutations).toEqualTypeOf<
       {
-        readonly insertIntoCustomers: {
+        readonly createCustomers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             values: {
@@ -159,7 +159,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertArrResolver<typeof schema.Customers, false>;
         };
-        readonly insertIntoPosts: {
+        readonly createPosts: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             values: {
@@ -168,7 +168,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertArrResolver<typeof schema.Posts, false>;
         };
-        readonly insertIntoTags: {
+        readonly createTags: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             values: {
@@ -177,7 +177,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertArrResolver<typeof schema.Tags, false>;
         };
-        readonly insertIntoUsers: {
+        readonly createUsers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             values: {
@@ -187,7 +187,7 @@ describe.sequential('Type tests', () => {
           resolve: InsertArrResolver<typeof schema.Users, false>;
         };
       } & {
-        readonly insertIntoCustomersSingle: {
+        readonly createCustomersSingle: {
           type: GraphQLObjectType;
           args: {
             values: {
@@ -196,7 +196,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertResolver<typeof schema.Customers, false>;
         };
-        readonly insertIntoPostsSingle: {
+        readonly createPostsSingle: {
           type: GraphQLObjectType;
           args: {
             values: {
@@ -205,7 +205,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertResolver<typeof schema.Posts, false>;
         };
-        readonly insertIntoTagsSingle: {
+        readonly createTagsSingle: {
           type: GraphQLObjectType;
           args: {
             values: {
@@ -214,7 +214,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertResolver<typeof schema.Tags, false>;
         };
-        readonly insertIntoUsersSingle: {
+        readonly createUsersSingle: {
           type: GraphQLObjectType;
           args: {
             values: {
@@ -265,28 +265,28 @@ describe.sequential('Type tests', () => {
           resolve: UpdateResolver<typeof schema.Users, false>;
         };
       } & {
-        readonly deleteFromCustomers: {
+        readonly deleteCustomers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             where: { type: GraphQLInputObjectType };
           };
           resolve: DeleteResolver<typeof schema.Customers, false>;
         };
-        readonly deleteFromPosts: {
+        readonly deletePosts: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             where: { type: GraphQLInputObjectType };
           };
           resolve: DeleteResolver<typeof schema.Posts, false>;
         };
-        readonly deleteFromTags: {
+        readonly deleteTags: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             where: { type: GraphQLInputObjectType };
           };
           resolve: DeleteResolver<typeof schema.Tags, false>;
         };
-        readonly deleteFromUsers: {
+        readonly deleteUsers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             where: { type: GraphQLInputObjectType };

@@ -2,8 +2,9 @@
 // This file tests the MySQL schema-generation code paths without a Docker/MySQL connection.
 // It calls generateSchemaData (generateMySQL) directly with a minimal mock db whose resolver
 // closures are never invoked — only the schema structure is inspected.
-import { describe, expect, it } from 'vitest';
+
 import { GraphQLNonNull, GraphQLObjectType } from 'graphql';
+import { describe, expect, it } from 'vitest';
 import { generateMySQL } from '@/util/builders';
 import * as schema from '../schema/mysql';
 
@@ -25,7 +26,7 @@ const mockDb: any = {
 };
 
 const tableSchema = { Users: schema.Users, Customers: schema.Customers, Posts: schema.Posts };
-const prefixes = { insert: 'insertInto', delete: 'deleteFrom', update: 'update' };
+const prefixes = { insert: 'create', delete: 'delete', update: 'update' };
 const suffixes = { list: '', single: 'Single' };
 
 const entities = generateMySQL(mockDb, tableSchema, schema.relations, undefined, prefixes, suffixes) as any;
@@ -65,8 +66,8 @@ describe('MySQL mutations are returnless', () => {
   });
 
   it('insert mutations return MutationReturn, not the table type', () => {
-    expect(entities.mutations['insertIntoUsers'].type).toBe(entities.types['MutationReturn']);
-    expect(entities.mutations['insertIntoUsersSingle'].type).toBe(entities.types['MutationReturn']);
+    expect(entities.mutations['createUsers'].type).toBe(entities.types['MutationReturn']);
+    expect(entities.mutations['createUsersSingle'].type).toBe(entities.types['MutationReturn']);
   });
 
   it('update mutations return MutationReturn', () => {
@@ -75,20 +76,20 @@ describe('MySQL mutations are returnless', () => {
   });
 
   it('delete mutations return MutationReturn', () => {
-    expect(entities.mutations['deleteFromUsers'].type).toBe(entities.types['MutationReturn']);
-    expect(entities.mutations['deleteFromPosts'].type).toBe(entities.types['MutationReturn']);
+    expect(entities.mutations['deleteUsers'].type).toBe(entities.types['MutationReturn']);
+    expect(entities.mutations['deletePosts'].type).toBe(entities.types['MutationReturn']);
   });
 
   it('all 6 mutations exist per table (array+single insert, update, delete)', () => {
     const mutationKeys = Object.keys(entities.mutations);
     // Users
-    expect(mutationKeys).toContain('insertIntoUsers');
-    expect(mutationKeys).toContain('insertIntoUsersSingle');
+    expect(mutationKeys).toContain('createUsers');
+    expect(mutationKeys).toContain('createUsersSingle');
     expect(mutationKeys).toContain('updateUsers');
-    expect(mutationKeys).toContain('deleteFromUsers');
+    expect(mutationKeys).toContain('deleteUsers');
     // Posts
-    expect(mutationKeys).toContain('insertIntoPosts');
-    expect(mutationKeys).toContain('deleteFromPosts');
+    expect(mutationKeys).toContain('createPosts');
+    expect(mutationKeys).toContain('deletePosts');
   });
 });
 
@@ -118,7 +119,7 @@ describe('MySQL generated types and inputs', () => {
   it('generates filter and order inputs for each table', () => {
     expect(entities.inputs['UsersFilters']).toBeDefined();
     expect(entities.inputs['UsersOrderBy']).toBeDefined();
-    expect(entities.inputs['InsertIntoUsersInput']).toBeDefined();
+    expect(entities.inputs['CreateUsersInput']).toBeDefined();
     expect(entities.inputs['UpdateUsersInput']).toBeDefined();
   });
 });

@@ -1,3 +1,4 @@
+import { createServer, type Server } from 'node:http';
 import Docker from 'dockerode';
 import { eq, inArray, type Relations, sql } from 'drizzle-orm';
 import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2';
@@ -11,7 +12,6 @@ import {
   GraphQLSchema,
 } from 'graphql';
 import { createYoga } from 'graphql-yoga';
-import { createServer, type Server } from 'node:http';
 import * as mysql from 'mysql2/promise';
 import { v4 as uuid } from 'uuid';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';

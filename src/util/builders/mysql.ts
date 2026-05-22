@@ -27,12 +27,9 @@ import {
   type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
+  type TypeNameMapper,
 } from '../builders/common.ts';
-import { capitalize, singularize, uncapitalize } from '../case-ops/index.ts';
-
-/** Produce the GraphQL object type name for a table, optionally singularized. */
-const toTypeName = (name: string, singular: boolean): string =>
-  singular ? capitalize(singularize(name)) : capitalize(name);
+import { capitalize, uncapitalize } from '../case-ops/index.ts';
 
 import {
   remapFromGraphQLArrayInput,
@@ -49,10 +46,10 @@ const generateSelectArray = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  listSuffix: string,
-  singularTypes: boolean,
+  fieldName: string,
+  typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
-  const queryName = `${uncapitalize(tableName)}${listSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -77,11 +74,10 @@ const generateSelectArray = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = toTypeName(tableName, singularTypes);
   const table = tables[tableName]!;
 
   return {
-    name: queryName,
+    name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
         const { offset, limit, orderBy, where } = args;
@@ -99,7 +95,7 @@ const generateSelectArray = (
           orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
           where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes)
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
             : undefined,
         });
 
@@ -125,10 +121,10 @@ const generateSelectSingle = (
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   orderArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
-  singleSuffix: string,
-  singularTypes: boolean,
+  fieldName: string,
+  typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
-  const queryName = `${uncapitalize(tableName)}${singleSuffix}`;
   const queryBase = db.query[tableName as keyof typeof db.query] as unknown as
     | RelationalQueryBuilder<any, any, any>
     | undefined;
@@ -150,11 +146,10 @@ const generateSelectSingle = (
     },
   } as GraphQLFieldConfigArgumentMap;
 
-  const typeName = toTypeName(tableName, singularTypes);
   const table = tables[tableName]!;
 
   return {
-    name: queryName,
+    name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
         const { offset, orderBy, where } = args;
@@ -171,7 +166,7 @@ const generateSelectSingle = (
           orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
           where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
           with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, singularTypes)
+            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
             : undefined,
         });
 
@@ -195,12 +190,11 @@ const generateSelectSingle = (
 
 const generateInsertArray = (
   db: MySqlDatabase<any, any, any, any>,
-  tableName: string,
+  _tableName: string,
   table: MySqlTable,
   baseType: GraphQLInputObjectType,
+  fieldName: string,
 ): CreatedResolver => {
-  const queryName = `insertInto${capitalize(tableName)}`;
-
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(baseType))),
@@ -208,7 +202,7 @@ const generateInsertArray = (
   };
 
   return {
-    name: queryName,
+    name: fieldName,
     resolver: async (_source, args: { values: Record<string, any>[] }, _context, _info) => {
       try {
         const input = remapFromGraphQLArrayInput(args.values, table);
@@ -233,12 +227,11 @@ const generateInsertArray = (
 
 const generateInsertSingle = (
   db: MySqlDatabase<any, any, any, any>,
-  tableName: string,
+  _tableName: string,
   table: MySqlTable,
   baseType: GraphQLInputObjectType,
+  fieldName: string,
 ): CreatedResolver => {
-  const queryName = `insertInto${capitalize(tableName)}Single`;
-
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
       type: new GraphQLNonNull(baseType),
@@ -246,7 +239,7 @@ const generateInsertSingle = (
   };
 
   return {
-    name: queryName,
+    name: fieldName,
     resolver: async (_source, args: { values: Record<string, any> }, _context, _info) => {
       try {
         const input = remapFromGraphQLSingleInput(args.values, table);
@@ -272,9 +265,8 @@ const generateUpdate = (
   table: MySqlTable,
   setArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
+  fieldName: string,
 ): CreatedResolver => {
-  const queryName = `update${capitalize(tableName)}`;
-
   const queryArgs = {
     set: {
       type: new GraphQLNonNull(setArgs),
@@ -285,7 +277,7 @@ const generateUpdate = (
   } as const satisfies GraphQLFieldConfigArgumentMap;
 
   return {
-    name: queryName,
+    name: fieldName,
     resolver: async (_source, args: { where?: Filters<Table>; set: Record<string, any> }, _context, _info) => {
       try {
         const { where, set } = args;
@@ -321,9 +313,8 @@ const generateDelete = (
   tableName: string,
   table: MySqlTable,
   filterArgs: GraphQLInputObjectType,
+  fieldName: string,
 ): CreatedResolver => {
-  const queryName = `deleteFrom${capitalize(tableName)}`;
-
   const queryArgs = {
     where: {
       type: filterArgs,
@@ -331,7 +322,7 @@ const generateDelete = (
   } as const satisfies GraphQLFieldConfigArgumentMap;
 
   return {
-    name: queryName,
+    name: fieldName,
     resolver: async (_source, args: { where?: Filters<Table> }, _context, _info) => {
       try {
         const { where } = args;
@@ -367,7 +358,7 @@ export const generateSchemaData = <
   relationsDepthLimit: number | undefined,
   prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
-  singularTypes: boolean = false,
+  typeNameMapper?: TypeNameMapper,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
@@ -394,6 +385,8 @@ export const generateSchemaData = <
     relationFieldContainers: new Map(),
     fullyBuiltTables: new Set(),
     relationTypeCache: new Map(),
+    orderTypeCache: new WeakMap(),
+    filterTypeCache: new WeakMap(),
   };
 
   const queries: ThunkObjMap<GraphQLFieldConfig<any, any>> = {};
@@ -408,7 +401,7 @@ export const generateSchemaData = <
         false,
         relationsDepthLimit,
         cacheCtx,
-        singularTypes,
+        typeNameMapper,
         prefixes.insert,
         prefixes.update,
         resolverFactory,
@@ -434,6 +427,18 @@ export const generateSchemaData = <
     const { insertInput, updateInput, tableFilters, tableOrder } = tableTypes.inputs;
     const { selectSingleOutput, selectArrOutput } = tableTypes.outputs;
 
+    // Compute field names using the mapper logic
+    const mapped = typeNameMapper?.(tableName);
+    const typeName = mapped ? capitalize(mapped.singular) : capitalize(tableName);
+    const listFieldName = (mapped?.plural ?? uncapitalize(tableName)) + suffixes.list;
+    const singleFieldName = mapped?.singular ?? uncapitalize(tableName) + suffixes.single;
+    const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(tableName)}`;
+    const createSingleFieldName = mapped
+      ? `${prefixes.insert}${capitalize(mapped.singular)}`
+      : `${prefixes.insert}${capitalize(tableName)}${suffixes.single}`;
+    const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+    const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+
     const selectArrGenerated = generateSelectArray(
       db,
       tableName,
@@ -441,8 +446,9 @@ export const generateSchemaData = <
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.list,
-      singularTypes,
+      listFieldName,
+      typeName,
+      typeNameMapper,
     );
     const selectSingleGenerated = generateSelectSingle(
       db,
@@ -451,13 +457,39 @@ export const generateSchemaData = <
       namedRelations,
       tableOrder,
       tableFilters,
-      suffixes.single,
-      singularTypes,
+      singleFieldName,
+      typeName,
+      typeNameMapper,
     );
-    const insertArrGenerated = generateInsertArray(db, tableName, schema[tableName] as MySqlTable, insertInput);
-    const insertSingleGenerated = generateInsertSingle(db, tableName, schema[tableName] as MySqlTable, insertInput);
-    const updateGenerated = generateUpdate(db, tableName, schema[tableName] as MySqlTable, updateInput, tableFilters);
-    const deleteGenerated = generateDelete(db, tableName, schema[tableName] as MySqlTable, tableFilters);
+    const insertArrGenerated = generateInsertArray(
+      db,
+      tableName,
+      schema[tableName] as MySqlTable,
+      insertInput,
+      createArrayFieldName,
+    );
+    const insertSingleGenerated = generateInsertSingle(
+      db,
+      tableName,
+      schema[tableName] as MySqlTable,
+      insertInput,
+      createSingleFieldName,
+    );
+    const updateGenerated = generateUpdate(
+      db,
+      tableName,
+      schema[tableName] as MySqlTable,
+      updateInput,
+      tableFilters,
+      updateFieldName,
+    );
+    const deleteGenerated = generateDelete(
+      db,
+      tableName,
+      schema[tableName] as MySqlTable,
+      tableFilters,
+      deleteFieldName,
+    );
 
     queries[selectArrGenerated.name] = {
       type: selectArrOutput,
@@ -501,9 +533,13 @@ export const generateSchemaData = <
     for (const [relName, relEntry] of Object.entries(tableRelations)) {
       const isOne = is((relEntry as any).relation ?? relEntry, One);
       const resolver = resolverFactory({ tableName, relationName: relName, relEntry, isOne });
-      if (resolver) { relResolvers[relName] = resolver; }
+      if (resolver) {
+        relResolvers[relName] = resolver;
+      }
     }
-    if (Object.keys(relResolvers).length > 0) { fieldResolvers[tableName] = relResolvers; }
+    if (Object.keys(relResolvers).length > 0) {
+      fieldResolvers[tableName] = relResolvers;
+    }
   }
 
   return { queries, mutations, inputs, types: outputs, fieldResolvers } as any;

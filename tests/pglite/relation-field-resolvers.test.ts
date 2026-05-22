@@ -1,11 +1,13 @@
 import { createServer, type Server } from 'node:http';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { GraphQLList, GraphQLNonNull, GraphQLObjectType, GraphQLSchema } from 'graphql';
 import { createYoga } from 'graphql-yoga';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { GraphQLClient } from '../util/query';
 import {
+  type Context,
   createCtx,
   createMinimalCtx,
+  type MinimalContext,
   schema,
   setupMinimal,
   setupServer,
@@ -14,8 +16,6 @@ import {
   teardownMinimal,
   teardownServer,
   teardownTables,
-  type Context,
-  type MinimalContext,
 } from './common';
 
 // ── Eager-path server (standard generated schema) ─────────────────────────────
@@ -56,7 +56,7 @@ beforeAll(async () => {
   // rows without any `with`-based relation pre-fetching.  This exercises the lazy
   // load path of every relation field resolver.
   const allTypes = minCtx.entities.types as Record<string, GraphQLObjectType>;
-  // With singularTypes:true the generated names are singular (User, Post, ...).
+  // With typeNameMapper the generated names are singular (User, Post, ...).
   const UsersType = allTypes['User'] ?? allTypes['Users'];
   const PostsType = allTypes['Post'] ?? allTypes['Posts'];
 

@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { PGlite } from '@electric-sql/pglite';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { GraphQLObjectType } from 'graphql';
+import type { GraphQLObjectType } from 'graphql';
 import { createYoga } from 'graphql-yoga';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildSchema } from '@/index';
@@ -38,7 +38,9 @@ describe('relationsDepthLimit: 0 — no relation fields generated', () => {
     ({ pglite } = await makeDb(dataDir));
   });
 
-  afterAll(async () => { await teardownDb(pglite, dataDir); });
+  afterAll(async () => {
+    await teardownDb(pglite, dataDir);
+  });
 
   it('generated User type has no relation fields', () => {
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
@@ -74,7 +76,9 @@ describe('relationsDepthLimit: 1 — direct relations present, no additional nes
     ({ pglite } = await makeDb(dataDir));
   });
 
-  afterAll(async () => { await teardownDb(pglite, dataDir); });
+  afterAll(async () => {
+    await teardownDb(pglite, dataDir);
+  });
 
   it('User type has direct relation fields at depth 1', () => {
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
@@ -127,18 +131,15 @@ describe('custom prefixes and suffixes', () => {
   });
 
   it('insert mutation uses custom prefix', async () => {
-    const res = await gql.queryGql(`
-      mutation { addUsersPostsList: addPosts(values: [{ content: "hello", authorId: 1 }]) { id content } }
-    `);
     // Mutation name is addPosts (custom prefix 'add' + table 'Posts')
-    // We just verify the old name doesn't work and the new one does
-    const wrongPrefix = await gql.queryGql(`{ insertIntoPosts(values: []) { id } }`);
-    expect(wrongPrefix.errors).toBeDefined(); // unknown field
+    // We just verify the default name doesn't work and the custom-prefix one does
+    const wrongPrefix = await gql.queryGql(`mutation { createPosts(values: []) { id } }`);
+    expect(wrongPrefix.errors).toBeDefined(); // unknown field — 'create' prefix not active here
   });
 
   it('delete mutation uses custom prefix', async () => {
-    const wrongPrefix = await gql.queryGql(`mutation { deleteFromUsers(where: {}) { id } }`);
-    expect(wrongPrefix.errors).toBeDefined(); // field 'deleteFromUsers' does not exist with custom prefix
+    const wrongPrefix = await gql.queryGql(`mutation { deleteUsers(where: {}) { id } }`);
+    expect(wrongPrefix.errors).toBeDefined(); // field 'deleteUsers' does not exist with custom prefix 'remove'
   });
 
   it('update mutation uses custom prefix', async () => {
@@ -159,9 +160,17 @@ describe('conflictDoNothing: true', () => {
     ({ pglite } = await makeDb(dataDir));
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
     const { schema: gqlSchema } = buildSchema(db, {
-      singularTypes: true,
+      typeNameMapper: (name) => {
+        const map: Record<string, { singular: string; plural: string }> = {
+          Users: { singular: 'user', plural: 'users' },
+          Posts: { singular: 'post', plural: 'posts' },
+          Customers: { singular: 'customer', plural: 'customers' },
+          Tags: { singular: 'tag', plural: 'tags' },
+        };
+        return map[name];
+      },
       prefixes: { insert: 'create', delete: 'delete' },
-      suffixes: { single: '', list: 's' },
+      suffixes: { single: '', list: '' },
       conflictDoNothing: true,
     });
     await setupTables({ db } as any);
@@ -199,64 +208,90 @@ describe('conflictDoNothing: true', () => {
   });
 });
 
-// ── singularTypes naming ───────────────────────────────────────────────────────
+// ── typeNameMapper naming ───────────────────────────────────────────────────────
 
-describe('singularTypes: true — generated query and mutation names', () => {
-  const dataDir = `./tests/.temp/pgdata-cfg-singular-${Date.now()}`;
+describe('typeNameMapper — generated query and mutation names', () => {
+  const dataDir = `./tests/.temp/pgdata-cfg-mapper-${Date.now()}`;
   let pglite: PGlite;
 
   beforeAll(async () => {
     ({ pglite } = await makeDb(dataDir));
   });
 
-  afterAll(async () => { await teardownDb(pglite, dataDir); });
+  afterAll(async () => {
+    await teardownDb(pglite, dataDir);
+  });
 
-  it('list/single query names are singularized', () => {
-    // Default suffixes: list='', single='Single'
-    // With singularTypes: uncapitalize+singularize('Users') = 'user'
-    //   list query  = 'user' + ''       = 'user'
-    //   single query = 'user' + 'Single' = 'userSingle'
+  it('list/single query names use mapped names', () => {
+    // With mapper: list='user' + ''='user', single='user' (no suffix since mapper provides singular)
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
-    const { entities } = buildSchema(db, { singularTypes: true });
+    const { entities } = buildSchema(db, {
+      typeNameMapper: (name) => {
+        const map: Record<string, { singular: string; plural: string }> = {
+          Users: { singular: 'user', plural: 'users' },
+        };
+        return map[name];
+      },
+    });
     const queryKeys = Object.keys(entities.queries);
     expect(queryKeys).toContain('user');
-    expect(queryKeys).toContain('userSingle');
-    expect(queryKeys).not.toContain('users');
+    expect(queryKeys).toContain('users');
     expect(queryKeys).not.toContain('usersSingle');
   });
 
-  it('insert-single mutation name drops the "Single" suffix', () => {
-    // singularTypes=true: insertInto + singularize('Users') = 'insertIntoUser' (no 'Single')
-    // singularTypes=false: insertInto + 'Users' + 'Single' = 'insertIntoUsersSingle'
+  it('insert-single mutation uses mapped singular name', () => {
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
-    const { entities } = buildSchema(db, { singularTypes: true });
+    const { entities } = buildSchema(db, {
+      typeNameMapper: (name) => {
+        const map: Record<string, { singular: string; plural: string }> = {
+          Users: { singular: 'user', plural: 'users' },
+        };
+        return map[name];
+      },
+    });
     const mutationKeys = Object.keys(entities.mutations);
-    expect(mutationKeys).toContain('insertIntoUser');
-    expect(mutationKeys).not.toContain('insertIntoUsersSingle');
-    expect(mutationKeys).not.toContain('insertIntoUserSingle');
+    expect(mutationKeys).toContain('createUser');
+    expect(mutationKeys).not.toContain('createUsersSingle');
+    expect(mutationKeys).not.toContain('createUserSingle');
   });
 
-  it('insert-array mutation keeps the table name capitalised (not singularized)', () => {
-    // insertInto + capitalize('Users') = 'insertIntoUsers' regardless of singularTypes
+  it('insert-array mutation uses mapped plural name', () => {
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
-    const { entities } = buildSchema(db, { singularTypes: true });
-    expect(Object.keys(entities.mutations)).toContain('insertIntoUsers');
+    const { entities } = buildSchema(db, {
+      typeNameMapper: (name) => {
+        const map: Record<string, { singular: string; plural: string }> = {
+          Users: { singular: 'user', plural: 'users' },
+        };
+        return map[name];
+      },
+    });
+    expect(Object.keys(entities.mutations)).toContain('createUsers');
   });
 
-  it('generated type names are singular', () => {
+  it('generated type names use mapped singular', () => {
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
-    const { entities } = buildSchema(db, { singularTypes: true });
+    const { entities } = buildSchema(db, {
+      typeNameMapper: (name) => {
+        const map: Record<string, { singular: string; plural: string }> = {
+          Users: { singular: 'user', plural: 'users' },
+        };
+        return map[name];
+      },
+    });
     const typeKeys = Object.keys(entities.types);
     expect(typeKeys).toContain('User');
     expect(typeKeys).not.toContain('Users');
   });
 
-  it('with singularTypes=false (default) names are plural', () => {
+  it('without typeNameMapper (default) names use table key', () => {
     const db = drizzle({ client: pglite, schema, relations: schema.relations });
-    const { entities } = buildSchema(db, { singularTypes: false });
+    const { entities } = buildSchema(db);
     const queryKeys = Object.keys(entities.queries);
     expect(queryKeys).toContain('users');
     expect(queryKeys).toContain('usersSingle');
     expect(Object.keys(entities.types)).toContain('Users');
+    // Default mutation names
+    expect(Object.keys(entities.mutations)).toContain('createUsers');
+    expect(Object.keys(entities.mutations)).toContain('deleteUsers');
   });
 });

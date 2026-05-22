@@ -1271,7 +1271,7 @@ describe.sequential('Query tests', async () => {
   it(`Update`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				updateCustomers(set: { isConfirmed: true, address: "Edited" }) {
+				updateCustomer(set: { isConfirmed: true, address: "Edited" }) {
 					id
 					address
 					isConfirmed
@@ -1283,7 +1283,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        updateCustomers: [
+        updateCustomer: [
           {
             id: 1,
             address: 'Edited',
@@ -1306,7 +1306,7 @@ describe.sequential('Query tests', async () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteCustomers {
+				deleteCustomer {
 					id
 					address
 					isConfirmed
@@ -1318,7 +1318,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteCustomers: [
+        deleteCustomer: [
           {
             id: 1,
             address: 'AdOne',
