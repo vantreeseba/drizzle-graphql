@@ -1279,7 +1279,7 @@ describe.sequential('Query tests', async () => {
   it(`Insert single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsersSingle(
+				createUsersSingle(
 					values: {
 						id: 3
 						name: "ThirdUser"
@@ -1313,7 +1313,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsersSingle: {
+        createUsersSingle: {
           id: 3,
           name: 'ThirdUser',
           email: 'userThree@notmail.com',
@@ -1334,7 +1334,7 @@ describe.sequential('Query tests', async () => {
   it(`Insert array`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsers(
+				createUsers(
 					values: [
 						{
 							id: 3
@@ -1384,7 +1384,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsers: [
+        createUsers: [
           {
             id: 3,
             name: 'ThirdUser',
@@ -1456,7 +1456,7 @@ describe.sequential('Query tests', async () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromCustomers {
+				deleteCustomers {
 					id
 					address
 					isConfirmed
@@ -1468,7 +1468,7 @@ describe.sequential('Query tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromCustomers: [
+        deleteCustomers: [
           {
             id: 1,
             address: 'AdOne',
@@ -1737,7 +1737,7 @@ describe.sequential('Arguments tests', async () => {
   it('Delete filters', async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromPosts(where: { OR: [{ id: { lte: 3 } }, { authorId: { eq: 5 } }] }) {
+				deletePosts(where: { OR: [{ id: { lte: 3 } }, { authorId: { eq: 5 } }] }) {
 					id
 					authorId
 					content
@@ -1747,7 +1747,7 @@ describe.sequential('Arguments tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromPosts: [
+        deletePosts: [
           {
             id: 1,
             authorId: 1,
@@ -2122,7 +2122,7 @@ describe.sequential('Returned data tests', () => {
           .strict(),
         mutations: z
           .object({
-            insertIntoUsers: z
+            createUsers: z
               .object({
                 args: z
                   .object({
@@ -2137,7 +2137,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoUsersSingle: z
+            createUsersSingle: z
               .object({
                 args: z
                   .object({
@@ -2172,7 +2172,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            deleteFromUsers: z
+            deleteUsers: z
               .object({
                 args: z
                   .object({
@@ -2187,7 +2187,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoPosts: z
+            createPosts: z
               .object({
                 args: z
                   .object({
@@ -2202,7 +2202,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoPostsSingle: z
+            createPostsSingle: z
               .object({
                 args: z
                   .object({
@@ -2237,7 +2237,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            deleteFromPosts: z
+            deletePosts: z
               .object({
                 args: z
                   .object({
@@ -2252,7 +2252,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoCustomers: z
+            createCustomers: z
               .object({
                 args: z
                   .object({
@@ -2267,7 +2267,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            insertIntoCustomersSingle: z
+            createCustomersSingle: z
               .object({
                 args: z
                   .object({
@@ -2302,7 +2302,7 @@ describe.sequential('Returned data tests', () => {
                 type: z.instanceof(GraphQLNonNull),
               })
               .strict(),
-            deleteFromCustomers: z
+            deleteCustomers: z
               .object({
                 args: z
                   .object({
@@ -2330,15 +2330,15 @@ describe.sequential('Returned data tests', () => {
           .object({
             UsersFilters: z.instanceof(GraphQLInputObjectType),
             UsersOrderBy: z.instanceof(GraphQLInputObjectType),
-            InsertIntoUsersInput: z.instanceof(GraphQLInputObjectType),
+            CreateUsersInput: z.instanceof(GraphQLInputObjectType),
             UpdateUsersInput: z.instanceof(GraphQLInputObjectType),
             PostsFilters: z.instanceof(GraphQLInputObjectType),
             PostsOrderBy: z.instanceof(GraphQLInputObjectType),
-            InsertIntoPostsInput: z.instanceof(GraphQLInputObjectType),
+            CreatePostsInput: z.instanceof(GraphQLInputObjectType),
             UpdatePostsInput: z.instanceof(GraphQLInputObjectType),
             CustomersFilters: z.instanceof(GraphQLInputObjectType),
             CustomersOrderBy: z.instanceof(GraphQLInputObjectType),
-            InsertIntoCustomersInput: z.instanceof(GraphQLInputObjectType),
+            CreateCustomersInput: z.instanceof(GraphQLInputObjectType),
             UpdateCustomersInput: z.instanceof(GraphQLInputObjectType),
           })
           .strict(),
@@ -2453,7 +2453,7 @@ describe.sequential('Type tests', () => {
   it('Mutations', () => {
     expectTypeOf(ctx.entities.mutations).toEqualTypeOf<
       {
-        readonly insertIntoCustomers: {
+        readonly createCustomers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             values: {
@@ -2462,7 +2462,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertArrResolver<typeof schema.Customers, false>;
         };
-        readonly insertIntoPosts: {
+        readonly createPosts: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             values: {
@@ -2471,7 +2471,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertArrResolver<typeof schema.Posts, false>;
         };
-        readonly insertIntoUsers: {
+        readonly createUsers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             values: {
@@ -2481,7 +2481,7 @@ describe.sequential('Type tests', () => {
           resolve: InsertArrResolver<typeof schema.Users, false>;
         };
       } & {
-        readonly insertIntoCustomersSingle: {
+        readonly createCustomersSingle: {
           type: GraphQLObjectType;
           args: {
             values: {
@@ -2490,7 +2490,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertResolver<typeof schema.Customers, false>;
         };
-        readonly insertIntoPostsSingle: {
+        readonly createPostsSingle: {
           type: GraphQLObjectType;
           args: {
             values: {
@@ -2499,7 +2499,7 @@ describe.sequential('Type tests', () => {
           };
           resolve: InsertResolver<typeof schema.Posts, false>;
         };
-        readonly insertIntoUsersSingle: {
+        readonly createUsersSingle: {
           type: GraphQLObjectType;
           args: {
             values: {
@@ -2540,21 +2540,21 @@ describe.sequential('Type tests', () => {
           resolve: UpdateResolver<typeof schema.Users, false>;
         };
       } & {
-        readonly deleteFromCustomers: {
+        readonly deleteCustomers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             where: { type: GraphQLInputObjectType };
           };
           resolve: DeleteResolver<typeof schema.Customers, false>;
         };
-        readonly deleteFromPosts: {
+        readonly deletePosts: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             where: { type: GraphQLInputObjectType };
           };
           resolve: DeleteResolver<typeof schema.Posts, false>;
         };
-        readonly deleteFromUsers: {
+        readonly deleteUsers: {
           type: GraphQLNonNull<GraphQLList<GraphQLNonNull<GraphQLObjectType>>>;
           args: {
             where: { type: GraphQLInputObjectType };
@@ -2590,9 +2590,9 @@ describe.sequential('Type tests', () => {
         readonly CustomersOrderBy: GraphQLInputObjectType;
         readonly PostsOrderBy: GraphQLInputObjectType;
       } & {
-        readonly InsertIntoUsersInput: GraphQLInputObjectType;
-        readonly InsertIntoCustomersInput: GraphQLInputObjectType;
-        readonly InsertIntoPostsInput: GraphQLInputObjectType;
+        readonly CreateUsersInput: GraphQLInputObjectType;
+        readonly CreateCustomersInput: GraphQLInputObjectType;
+        readonly CreatePostsInput: GraphQLInputObjectType;
       } & {
         readonly UpdateUsersInput: GraphQLInputObjectType;
         readonly UpdateCustomersInput: GraphQLInputObjectType;
@@ -2826,7 +2826,7 @@ describe.sequential('__typename only tests', () => {
   it(`Insert single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsersSingle(
+				createUsersSingle(
 					values: {
 						id: 3
 						name: "ThirdUser"
@@ -2849,7 +2849,7 @@ describe.sequential('__typename only tests', () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsersSingle: {
+        createUsersSingle: {
           __typename: 'Users',
         },
       },
@@ -2859,7 +2859,7 @@ describe.sequential('__typename only tests', () => {
   it(`Insert array`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsers(
+				createUsers(
 					values: [
 						{
 							id: 3
@@ -2898,7 +2898,7 @@ describe.sequential('__typename only tests', () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsers: [
+        createUsers: [
           {
             __typename: 'Users',
           },
@@ -2936,7 +2936,7 @@ describe.sequential('__typename only tests', () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromCustomers {
+				deleteCustomers {
 					__typename
 				}
 			}
@@ -2944,7 +2944,7 @@ describe.sequential('__typename only tests', () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromCustomers: [
+        deleteCustomers: [
           {
             __typename: 'Customers',
           },
@@ -3529,7 +3529,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Insert single`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsersSingle(
+				createUsersSingle(
 					values: {
 						id: 3
 						name: "ThirdUser"
@@ -3564,7 +3564,7 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsersSingle: {
+        createUsersSingle: {
           id: 3,
           name: 'ThirdUser',
           email: 'userThree@notmail.com',
@@ -3586,7 +3586,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Insert array`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				insertIntoUsers(
+				createUsers(
 					values: [
 						{
 							id: 3
@@ -3637,7 +3637,7 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        insertIntoUsers: [
+        createUsers: [
           {
             id: 3,
             name: 'ThirdUser',
@@ -3714,7 +3714,7 @@ describe.sequential('__typename with data tests', async () => {
   it(`Delete`, async () => {
     const res = await ctx.gql.queryGql(/* GraphQL */ `
 			mutation {
-				deleteFromCustomers {
+				deleteCustomers {
 					id
 					address
 					isConfirmed
@@ -3727,7 +3727,7 @@ describe.sequential('__typename with data tests', async () => {
 
     expect(res).toStrictEqual({
       data: {
-        deleteFromCustomers: [
+        deleteCustomers: [
           {
             id: 1,
             address: 'AdOne',
