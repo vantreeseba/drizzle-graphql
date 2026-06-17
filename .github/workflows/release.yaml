@@ -37,8 +37,6 @@ jobs:
         run: mkdir -p tests/.temp && npx vitest run tests/pglite tests/sqlite.test.ts tests/sqlite-custom.test.ts
 
       - name: Release
+        run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
-        run: npx semantic-release
