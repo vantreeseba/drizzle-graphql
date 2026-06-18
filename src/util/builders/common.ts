@@ -1230,6 +1230,27 @@ export const extractRelationsParams = (
 };
 
 /**
+ * Returns a copy of `relationMap` containing only the relations that should be eagerly
+ * pre-fetched (per the `shouldEagerLoad` predicate). Pass the result wherever a query or
+ * mutation resolver builds its `with:` clause; pass the full map to type generation so
+ * opted-out relations still get a (lazily-resolved) field. Relations excluded here are
+ * never added to `with:`, so they don't overfetch — they resolve through their field
+ * resolver instead (or a resolver you override, e.g. via `@graphql-tools/schema`).
+ */
+export const pruneNonEagerRelations = (
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
+  shouldEagerLoad: (tableName: string, relationName: string) => boolean,
+): Record<string, Record<string, TableNamedRelations>> => {
+  const out: Record<string, Record<string, TableNamedRelations>> = {};
+  for (const [tableName, rels] of Object.entries(relationMap)) {
+    out[tableName] = Object.fromEntries(
+      Object.entries(rels).filter(([relationName]) => shouldEagerLoad(tableName, relationName)),
+    );
+  }
+  return out;
+};
+
+/**
  * Returns the property names of a table's primary key column(s).
  *
  * drizzle-orm marks inline `.primaryKey()` columns with `column.primary === true`,

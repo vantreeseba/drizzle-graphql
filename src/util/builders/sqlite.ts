@@ -26,6 +26,7 @@ import {
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
   getPrimaryKeyPropNames,
+  pruneNonEagerRelations,
   type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
@@ -464,6 +465,7 @@ export const generateSchemaData = <
   prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
   typeNameMapper?: TypeNameMapper,
+  shouldEagerLoad: (tableName: string, relationName: string) => boolean = () => true,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
@@ -479,6 +481,8 @@ export const generateSchemaData = <
 
   // Build namedRelations from the drizzle-orm v1 relations config.
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Pruned map for query/mutation resolvers' `with:`; type generation keeps the full map.
+  const eagerRelations = pruneNonEagerRelations(namedRelations, shouldEagerLoad);
 
   const resolverFactory: RelationResolverFactory = createRelationResolverFactory(db, tables);
 
@@ -537,7 +541,7 @@ export const generateSchemaData = <
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       listFieldName,
@@ -548,7 +552,7 @@ export const generateSchemaData = <
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       singleFieldName,
@@ -560,7 +564,7 @@ export const generateSchemaData = <
       tableName,
       schema[tableName] as SQLiteTable,
       tables,
-      namedRelations,
+      eagerRelations,
       insertInput,
       createArrayFieldName,
       typeName,
@@ -571,7 +575,7 @@ export const generateSchemaData = <
       tableName,
       schema[tableName] as SQLiteTable,
       tables,
-      namedRelations,
+      eagerRelations,
       insertInput,
       createSingleFieldName,
       typeName,
@@ -582,7 +586,7 @@ export const generateSchemaData = <
       tableName,
       schema[tableName] as SQLiteTable,
       tables,
-      namedRelations,
+      eagerRelations,
       updateInput,
       tableFilters,
       updateFieldName,

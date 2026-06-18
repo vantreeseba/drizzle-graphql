@@ -24,6 +24,7 @@ import {
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   generateTableTypes,
+  pruneNonEagerRelations,
   type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
@@ -359,6 +360,7 @@ export const generateSchemaData = <
   prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
   typeNameMapper?: TypeNameMapper,
+  shouldEagerLoad: (tableName: string, relationName: string) => boolean = () => true,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
@@ -374,6 +376,8 @@ export const generateSchemaData = <
 
   // Build namedRelations from the drizzle-orm v1 relations config.
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Pruned map for query resolvers' `with:`; type generation keeps the full map.
+  const eagerRelations = pruneNonEagerRelations(namedRelations, shouldEagerLoad);
 
   const resolverFactory: RelationResolverFactory = createRelationResolverFactory(db, tables);
 
@@ -443,7 +447,7 @@ export const generateSchemaData = <
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       listFieldName,
@@ -454,7 +458,7 @@ export const generateSchemaData = <
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       singleFieldName,

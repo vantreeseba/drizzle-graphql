@@ -79,6 +79,11 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
 
   const typeNameMapper = config?.typeNameMapper;
 
+  // Normalize eagerLoadRelations (boolean | predicate | undefined) into a predicate.
+  const eagerOpt = config?.eagerLoadRelations;
+  const shouldEagerLoad: (tableName: string, relationName: string) => boolean =
+    eagerOpt === undefined || eagerOpt === true ? () => true : eagerOpt === false ? () => false : eagerOpt;
+
   // When a typeNameMapper is provided, the mapper's singular/plural forms disambiguate the
   // list and single fields even if the suffixes are identical (e.g. both '').
   // Only enforce the suffix-collision check when no mapper is active.
@@ -111,6 +116,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
       prefixes,
       suffixes,
       typeNameMapper,
+      shouldEagerLoad,
     );
   } else if (is(db, PgAsyncDatabase)) {
     generatorOutput = generatePG(
@@ -122,6 +128,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
       suffixes,
       config?.conflictDoNothing ?? false,
       typeNameMapper,
+      shouldEagerLoad,
     );
   } else if (is(db, BaseSQLiteDatabase)) {
     generatorOutput = generateSQLite(
@@ -132,6 +139,7 @@ export const buildSchema = <TDbClient extends AnyDrizzleDB<any>>(
       prefixes,
       suffixes,
       typeNameMapper,
+      shouldEagerLoad,
     );
   } else {
     throw new Error('Drizzle-GraphQL Error: Unknown database instance type');

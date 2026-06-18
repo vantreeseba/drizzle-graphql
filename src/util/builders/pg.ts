@@ -25,6 +25,7 @@ import {
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
   getPrimaryKeyPropNames,
+  pruneNonEagerRelations,
   type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
@@ -518,6 +519,7 @@ export function generateSchemaData<
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
   conflictDoNothing: boolean = false,
   typeNameMapper?: TypeNameMapper,
+  shouldEagerLoad: (tableName: string, relationName: string) => boolean = () => true,
 ): GeneratedEntities<TDrizzleInstance, TSchema> {
   const schemaEntries = Object.entries(schema);
   const tableEntries = schemaEntries.filter(([_key, value]) => is(value, PgTable)) as [string, PgTable][];
@@ -532,6 +534,10 @@ export function generateSchemaData<
   // Flatten drizzle-orm v1 TablesRelationalConfig into the canonical shape
   // used throughout common.ts: Record<tableName, Record<relName, TableNamedRelations>>
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Relations to eager-load via `with:`. Query/mutation resolvers use this pruned map so
+  // opted-out relations never overfetch; type generation keeps the full map so their
+  // fields still exist and resolve lazily.
+  const eagerRelations = pruneNonEagerRelations(namedRelations, shouldEagerLoad);
 
   const resolverFactory: RelationResolverFactory = createRelationResolverFactory(db, tables);
 
@@ -591,7 +597,7 @@ export function generateSchemaData<
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       listFieldName,
@@ -602,7 +608,7 @@ export function generateSchemaData<
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       singleFieldName,
@@ -614,7 +620,7 @@ export function generateSchemaData<
       tableName,
       schema[tableName] as PgTable,
       tables,
-      namedRelations,
+      eagerRelations,
       insertInput,
       createArrayFieldName,
       typeName,
@@ -626,7 +632,7 @@ export function generateSchemaData<
       tableName,
       schema[tableName] as PgTable,
       tables,
-      namedRelations,
+      eagerRelations,
       insertInput,
       createSingleFieldName,
       typeName,
@@ -638,7 +644,7 @@ export function generateSchemaData<
       tableName,
       schema[tableName] as PgTable,
       tables,
-      namedRelations,
+      eagerRelations,
       updateInput,
       tableFilters,
       updateFieldName,

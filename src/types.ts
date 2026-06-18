@@ -467,4 +467,37 @@ export type BuildSchemaConfig = {
    * the `users` table, and leaves other tables with their default names.
    */
   typeNameMapper?: (tableName: string) => { singular: string; plural: string } | undefined;
+  /**
+   * Controls whether a relation is eagerly pre-fetched via Drizzle's `with:` clause
+   * when its parent is loaded through a generated query or mutation.
+   *
+   * `true` (default) — every selected relation is eager-loaded in the parent's query.
+   *
+   * `false` — no relation is ever eager-loaded; all relations resolve lazily through
+   * their (request-batched) field resolvers.
+   *
+   * `(tableName, relationName) => boolean` — decide per relation. Return `false` to
+   * exclude that relation from `with:` (and from the mutation eager re-fetch).
+   *
+   * Opting a relation out does NOT remove its field resolver — it still resolves
+   * lazily via the request-scoped batch loader. This is the hook for overriding a
+   * relation's resolver (e.g. via `@graphql-tools/schema`'s `addResolversToSchema`)
+   * without the eager `with:` query also fetching it from the database:
+   *
+   * ```ts
+   * const { schema } = buildSchema(db, {
+   *   eagerLoadRelations: (t, r) => !(t === 'Users' && r === 'posts'),
+   * });
+   * const finalSchema = addResolversToSchema({
+   *   schema,
+   *   resolvers: { Users: { posts: (parent) => myLoader.load(parent.id) } },
+   * });
+   * ```
+   *
+   * Table and relation names are the Drizzle schema keys (e.g. `Users`, `posts`),
+   * matching the keys of `entities.fieldResolvers`.
+   *
+   * @default true
+   */
+  eagerLoadRelations?: boolean | ((tableName: string, relationName: string) => boolean);
 };
