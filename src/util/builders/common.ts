@@ -37,6 +37,7 @@ import {
   One,
   or,
   type SQL,
+  sql,
 } from 'drizzle-orm';
 import type { GraphQLFieldResolver } from 'graphql';
 import {
@@ -53,7 +54,7 @@ import {
 import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { getOrCreateLoader } from '../batch-loader/index.ts';
 import { capitalize } from '../case-ops/index.ts';
-import { remapFromGraphQLCore, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
+import { remapFromGraphQLCore, remapToGraphQLArrayOutput } from '../data-mappers/index.ts';
 import { drizzleColumnToGraphQLType } from '../type-converter/index.ts';
 import type {
   ConvertedColumn,
@@ -195,41 +196,57 @@ export type RelationResolverFactory = (params: {
   isOne: boolean;
 }) => GraphQLFieldResolver<any, any> | undefined;
 
-const directRelationQuery = async (
+/**
+ * Fetches a to-many relation with per-parent limit/offset for ALL parents in a
+ * single query, using a window function (ROW_NUMBER() OVER (PARTITION BY fk ...)).
+ *
+ * This replaces the previous per-parent fallback that issued one query per parent
+ * (true N+1) whenever pagination args were present. Each parent gets its own
+ * limit/offset window while the database is hit exactly once for the whole batch.
+ *
+ * Window functions require PostgreSQL, MySQL >= 8.0, or SQLite >= 3.25.
+ * Returns raw rows (NOT remapped); the caller groups + remaps them.
+ */
+const batchedPaginatedRelationQuery = async (
   db: any,
   targetTable: Table,
-  targetTableName: string,
   foreignCol: Column,
-  localValue: any,
-  whereArg: any,
+  whereCondition: SQL | undefined,
   orderByArg: any,
-  limit: number | undefined,
-  offset: number | undefined,
-  isOne: boolean,
-): Promise<any> => {
-  const whereCondition = and(
-    eq(foreignCol, localValue),
-    whereArg ? extractFilters(targetTable, targetTableName, whereArg) : undefined,
-  );
+  limit: number | null,
+  offset: number | null,
+): Promise<any[]> => {
+  const cols = getColumns(targetTable);
 
-  let q = db.select().from(targetTable).where(whereCondition) as any;
-  if (orderByArg) {
-    q = q.orderBy(...extractOrderBy(targetTable, orderByArg));
-  }
-  if (offset != null) {
-    q = q.offset(offset);
-  }
+  const orderExprs = orderByArg ? extractOrderBy(targetTable, orderByArg) : [];
+  const orderClause = orderExprs.length ? sql` order by ${sql.join(orderExprs, sql`, `)}` : sql``;
+  const rowNumber = sql`row_number() over (partition by ${foreignCol}${orderClause})`.as('__rn');
+
+  // Subquery: every target column plus a per-partition row number.
+  const sub = db
+    .select({ ...cols, __rn: rowNumber })
+    .from(targetTable)
+    .where(whereCondition)
+    .as('__paginated');
+
+  // Outer: keep only the rows that fall inside each parent's window.
+  const lower = offset ?? 0;
+  const windowConds: any[] = [gt(sub.__rn, lower)];
   if (limit != null) {
-    q = q.limit(limit);
+    windowConds.push(lte(sub.__rn, lower + limit));
   }
-  const rows = await q;
-  if (isOne) {
-    if (!rows[0]) {
-      return null;
-    }
-    return remapToGraphQLSingleOutput(rows[0], targetTableName, targetTable);
+
+  const rows: any[] = await db
+    .select()
+    .from(sub)
+    .where(and(...windowConds))
+    .orderBy(sub.__rn);
+
+  // Strip the helper column so it doesn't leak into remapping/output.
+  for (const row of rows) {
+    delete row.__rn;
   }
-  return remapToGraphQLArrayOutput(rows, targetTableName, targetTable);
+  return rows;
 };
 
 /**
@@ -271,24 +288,16 @@ export const createRelationResolverFactory =
 
       const { where: whereArg, orderBy: orderByArg, limit, offset } = (args ?? {}) as any;
 
-      // Pagination args prevent batching — execute a direct per-item query.
-      if (limit != null || offset != null) {
-        return directRelationQuery(
-          db,
-          targetTable,
-          targetTableName,
-          foreignCol,
-          localValue,
-          whereArg,
-          orderByArg,
-          limit,
-          offset,
-          isOne,
-        );
-      }
-
-      // Batch path: collect all sibling calls in this tick and execute one IN-clause query.
-      const argsKey = JSON.stringify({ where: whereArg ?? null, orderBy: orderByArg ?? null });
+      // Batch path: collect all sibling calls in this tick and execute one query.
+      // Pagination args are part of the loader key so siblings sharing identical
+      // args batch together; per-parent limit/offset is applied inside the batch
+      // via a window function rather than bailing to a per-parent query (N+1).
+      const argsKey = JSON.stringify({
+        where: whereArg ?? null,
+        orderBy: orderByArg ?? null,
+        limit: limit ?? null,
+        offset: offset ?? null,
+      });
       const loaderKey = `${tableName}::${relationName}::${argsKey}`;
 
       const loader = getOrCreateLoader(context, loaderKey, async (parentIds: readonly any[]) => {
@@ -298,13 +307,27 @@ export const createRelationResolverFactory =
           whereArg ? extractFilters(targetTable, targetTableName, whereArg) : undefined,
         );
 
-        // Use plain db.select() so column refs are never aliased — avoids drizzle-orm v1
-        // RQB aliasing requirements that would require referencing via aliasedTable proxy.
-        let q = db.select().from(targetTable).where(whereCondition) as any;
-        if (orderByArg) {
-          q = q.orderBy(...extractOrderBy(targetTable, orderByArg));
+        let rows: any[];
+        if (limit != null || offset != null) {
+          // Per-parent pagination across the whole batch in one query.
+          rows = await batchedPaginatedRelationQuery(
+            db,
+            targetTable,
+            foreignCol,
+            whereCondition,
+            orderByArg,
+            limit ?? null,
+            offset ?? null,
+          );
+        } else {
+          // Use plain db.select() so column refs are never aliased — avoids drizzle-orm v1
+          // RQB aliasing requirements that would require referencing via aliasedTable proxy.
+          let q = db.select().from(targetTable).where(whereCondition) as any;
+          if (orderByArg) {
+            q = q.orderBy(...extractOrderBy(targetTable, orderByArg));
+          }
+          rows = await q;
         }
-        const rows: any[] = await q;
 
         // Group by FK value before remapping (remapping may delete null fields).
         if (isOne) {

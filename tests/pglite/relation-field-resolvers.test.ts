@@ -191,13 +191,66 @@ describe.sequential('relation field resolvers — lazy path (custom root resolve
     expect(user1?.posts[0]?.content).toBe('1MESSAGE');
   });
 
-  it('relation field limit arg triggers direct query path', async () => {
+  it('relation field limit arg applies per-parent across a batched query', async () => {
+    // user 1 has 4 posts, user 5 has 2 — limit:2 must cap EACH parent at 2,
+    // not the whole result set, and must do so in a single batched query.
     const result = await lazyGql.queryGql(`{
       users { id posts(limit: 2) { id } }
     }`);
     expect(result.errors).toBeUndefined();
     const user1 = result.data?.users?.find((u: any) => u.id === 1);
+    const user5 = result.data?.users?.find((u: any) => u.id === 5);
     expect(user1?.posts).toHaveLength(2);
+    expect(user5?.posts).toHaveLength(2);
+  });
+
+  it('paginated relation issues a SINGLE batched query (no N+1)', async () => {
+    // Count SELECTs against the posts table issued to the driver during the request.
+    const orig = minCtx.pglite.query.bind(minCtx.pglite);
+    let postSelects = 0;
+    (minCtx.pglite as any).query = (text: string, ...rest: any[]) => {
+      if (/select/i.test(text) && /"posts"/i.test(text)) {
+        postSelects++;
+      }
+      return orig(text, ...rest);
+    };
+    try {
+      const result = await lazyGql.queryGql(`{
+        users { id posts(limit: 2) { id } }
+      }`);
+      expect(result.errors).toBeUndefined();
+    } finally {
+      (minCtx.pglite as any).query = orig;
+    }
+    // Pre-fix this was one query per user (true N+1). Now exactly one for the batch.
+    expect(postSelects).toBe(1);
+  });
+
+  it('relation field offset arg applies per-parent across a batched query', async () => {
+    // Order by id so the window is deterministic. user 1 posts: 1,2,3,6.
+    // offset:1 limit:2 → ids 2,3 for user 1; user 5 posts: 4,5 → offset:1 → id 5.
+    const result = await lazyGql.queryGql(`{
+      users {
+        id
+        posts(orderBy: { id: { priority: 1, direction: asc } }, offset: 1, limit: 2) { id }
+      }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const user1 = result.data?.users?.find((u: any) => u.id === 1);
+    const user5 = result.data?.users?.find((u: any) => u.id === 5);
+    expect(user1?.posts.map((p: any) => p.id)).toEqual([2, 3]);
+    expect(user5?.posts.map((p: any) => p.id)).toEqual([5]);
+  });
+
+  it('limit combined with where applies per-parent in one batched query', async () => {
+    const result = await lazyGql.queryGql(`{
+      users { id posts(where: { content: { eq: "1MESSAGE" } }, limit: 5) { id content } }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const user1 = result.data?.users?.find((u: any) => u.id === 1);
+    const user5 = result.data?.users?.find((u: any) => u.id === 5);
+    expect(user1?.posts).toHaveLength(1);
+    expect(user5?.posts).toHaveLength(1);
   });
 
   it('user with no related records returns empty array for many and null for one', async () => {
