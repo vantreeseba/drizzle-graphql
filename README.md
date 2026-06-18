@@ -117,3 +117,44 @@ Generated schemas resolve nested relations without N+1 query explosions:
 > rely on SQL window functions. These require **PostgreSQL**, **MySQL 8.0+**, or
 > **SQLite 3.25+**. Relations without pagination, and all other query/mutation paths,
 > have no such requirement.
+
+### Overriding a relation's resolver without overfetching
+
+By default the eager `with:` pre-fetch is driven purely by the GraphQL selection set:
+any selected relation is fetched from the database, even if you intend to resolve it
+yourself (from a cache, another service, a dataloader, …). To override a relation's
+resolver, first opt it out of eager loading with `eagerLoadRelations` so the parent
+query stops fetching it, then supply your resolver with the standard
+[`@graphql-tools/schema`](https://the-guild.dev/graphql/tools) utilities:
+
+```Typescript
+import { addResolversToSchema } from '@graphql-tools/schema'
+
+const { schema } = buildSchema(db, {
+    // Exclude Users.posts from the parent query's `with:` clause.
+    // Other relations keep eager-loading as usual.
+    eagerLoadRelations: (table, relation) => !(table === 'Users' && relation === 'posts'),
+})
+
+const finalSchema = addResolversToSchema({
+    schema,
+    resolvers: {
+        Users: {
+            posts: (parent, args, context) => context.postsLoader.load(parent.id),
+        },
+    },
+})
+```
+
+`eagerLoadRelations` accepts:
+
+-   `true` (default) — eager-load every relation.
+-   `false` — never eager-load; every relation resolves lazily through its
+    (request-batched) field resolver.
+-   `(tableName, relationName) => boolean` — decide per relation. Returning `false`
+    excludes that relation from `with:` (and from the mutation eager re-fetch).
+
+Opting a relation out does **not** remove its field — it keeps resolving lazily via the
+request-scoped batch loader, so the field still works even before you override it. Table
+and relation names are the Drizzle schema keys (e.g. `Users`, `posts`), matching the keys
+of `entities.fieldResolvers`.
