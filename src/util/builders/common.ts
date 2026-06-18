@@ -1228,3 +1228,105 @@ export const extractRelationsParams = (
 
   return extractRelationsParamsInner(relationMap, tables, tableName, typeName, info, typeNameMapper, true);
 };
+
+/**
+ * Returns the property names of a table's primary key column(s).
+ *
+ * drizzle-orm marks inline `.primaryKey()` columns with `column.primary === true`,
+ * but table-level composite keys (`primaryKey({ columns })`) leave `column.primary`
+ * false on each member — those are only visible via the per-dialect `getTableConfig`.
+ * Dialect builders pass the composite members' DB column names in via
+ * `compositePkColumnNames`; we map them back to property names here.
+ *
+ * Resolution order: inline PK columns → composite PK columns → a column literally
+ * named `id` → empty (caller falls back to the BatchLoader).
+ */
+export const getPrimaryKeyPropNames = (table: Table, compositePkColumnNames?: readonly string[]): string[] => {
+  const cols = getColumns(table);
+  const entries = Object.entries(cols);
+
+  // Inline single `.primaryKey()` columns.
+  const inlinePks = entries.filter(([, c]) => (c as any).primary).map(([k]) => k);
+  if (inlinePks.length) {
+    return inlinePks;
+  }
+
+  // Composite primary key (DB column names supplied by the dialect builder).
+  if (compositePkColumnNames?.length) {
+    const wanted = new Set(compositePkColumnNames);
+    const fromComposite = entries.filter(([, c]) => wanted.has((c as any).name)).map(([k]) => k);
+    if (fromComposite.length) {
+      return fromComposite;
+    }
+  }
+
+  // Last resort: a column conventionally named `id`.
+  return cols.id ? ['id'] : [];
+};
+
+/**
+ * After a mutation, if the GraphQL selection includes relation fields, re-fetch the
+ * mutated rows through the relational query builder so relations are eagerly loaded
+ * in a single query — making the per-field BatchLoader fallback unnecessary for
+ * mutation results.
+ *
+ * Falls back to the original `.returning()` rows (relations then resolve via the
+ * field-level BatchLoader) when no relations are selected, when the table has no RQB
+ * support, or when no primary key columns can be determined.
+ *
+ * Supports single- and multi-column primary keys.
+ */
+export const eagerLoadMutationRelations = async (
+  db: any,
+  tableName: string,
+  table: Table,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
+  typeName: string,
+  typeNameMapper: TypeNameMapper | undefined,
+  parsedInfo: ResolveTree,
+  rows: any[],
+  pkNames: string[],
+): Promise<any[]> => {
+  if (!rows.length || !pkNames.length) {
+    return rows;
+  }
+
+  const withParams = relationMap[tableName]
+    ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+    : undefined;
+  // No relations requested — nothing to eager-load.
+  if (!withParams || !Object.keys(withParams).length) {
+    return rows;
+  }
+
+  const queryBase = db.query?.[tableName];
+  if (!queryBase) {
+    return rows;
+  }
+
+  const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table);
+  const keyOf = (row: any) => JSON.stringify(pkNames.map((n) => row[n]));
+
+  let whereRaw: (aliased: any) => SQL | undefined;
+  if (pkNames.length === 1) {
+    const pkName = pkNames[0]!;
+    const ids = rows.map((r) => r[pkName]);
+    // drizzle-orm v1 RQB calls the where callback with the aliased table proxy;
+    // reference the PK through it so the column ref matches the CTE alias.
+    whereRaw = (aliased: any) => inArray(aliased[pkName], ids);
+  } else {
+    // Composite PK: OR together one equality-tuple per mutated row.
+    whereRaw = (aliased: any) => or(...rows.map((row) => and(...pkNames.map((n) => eq(aliased[n], row[n])))));
+  }
+
+  const enriched: any[] = await queryBase.findMany({
+    columns: selectedColumns,
+    where: { RAW: whereRaw },
+    with: withParams,
+  });
+
+  // Preserve the mutation's original row order.
+  const byKey = new Map(enriched.map((r) => [keyOf(r), r]));
+  return rows.map((r) => byKey.get(keyOf(r))).filter((r) => r !== undefined);
+};

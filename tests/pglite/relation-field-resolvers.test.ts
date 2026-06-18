@@ -121,6 +121,36 @@ describe.sequential('relation field resolvers — eager path (standard schema)',
     expect(user2?.customer?.id).toBe(2);
   });
 
+  it('mutation selecting a relation eager-loads it (no BatchLoader fallback)', async () => {
+    const orig = ctx.pglite.query.bind(ctx.pglite);
+    const seen: string[] = [];
+    (ctx.pglite as any).query = (text: string, ...rest: any[]) => {
+      seen.push(text.replace(/\s+/g, ' '));
+      return orig(text, ...rest);
+    };
+    let result: any;
+    try {
+      result = await ctx.gql.queryGql(`mutation {
+        createPost(values: { id: 9001, authorId: 1, content: "EAGER" }) {
+          id content author { id name }
+        }
+      }`);
+    } finally {
+      (ctx.pglite as any).query = orig;
+    }
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.createPost?.author).toEqual({ id: 1, name: 'FirstUser' });
+
+    // The relation must be eager-loaded via a lateral join on the re-fetch,
+    // NOT via the field-level BatchLoader (which issues a plain
+    // `select ... from "users" where "users"."id" in (...)`).
+    const lateralLoads = seen.filter((q) => /from "posts".*left join lateral.*"users"/i.test(q));
+    const batchLoaderLoads = seen.filter((q) => /from "users" where "users"\."id" in/i.test(q));
+    expect(lateralLoads).toHaveLength(1);
+    expect(batchLoaderLoads).toHaveLength(0);
+  });
+
   it('relation field args (where) work via the generated schema', async () => {
     const result = await ctx.gql.queryGql(`{
       users { id posts(where: { content: { eq: "1MESSAGE" } }) { id content } }

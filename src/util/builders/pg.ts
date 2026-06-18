@@ -1,7 +1,7 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
 import { is, One, type Table, type View } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
-import { type PgAsyncDatabase, type PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import { getTableConfig, type PgAsyncDatabase, type PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, ThunkObjMap } from 'graphql';
 import {
   GraphQLError,
@@ -17,12 +17,14 @@ import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../t
 import {
   buildNamedRelations,
   createRelationResolverFactory,
+  eagerLoadMutationRelations,
   extractFilters,
   extractOrderBy,
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  getPrimaryKeyPropNames,
   type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
@@ -227,13 +229,24 @@ const generateSelectSingle = (
   };
 };
 
+/** Primary-key property names for a PG table, including table-level composite keys. */
+const pgPrimaryKeyPropNames = (table: PgTable): string[] => {
+  const compositePkColumnNames = getTableConfig(table).primaryKeys.flatMap((pk: any) =>
+    pk.columns.map((c: any) => c.name),
+  );
+  return getPrimaryKeyPropNames(table, compositePkColumnNames);
+};
+
 const generateInsertArray = (
   db: PgAsyncDatabase<any, any, any>,
   tableName: string,
   table: PgTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
   conflictDoNothing: boolean = false,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
@@ -266,7 +279,20 @@ const generateInsertArray = (
         }
         const result = await query;
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
+        const enriched = await eagerLoadMutationRelations(
+          db,
+          tableName,
+          table,
+          tables,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          result,
+          pgPrimaryKeyPropNames(table),
+        );
+
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError(e.message);
@@ -283,9 +309,12 @@ const generateInsertSingle = (
   db: PgAsyncDatabase<any, any, any>,
   tableName: string,
   table: PgTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
   conflictDoNothing: boolean = false,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
@@ -319,7 +348,20 @@ const generateInsertSingle = (
           return undefined;
         }
 
-        return remapToGraphQLSingleOutput(result[0], tableName, table);
+        const enriched = await eagerLoadMutationRelations(
+          db,
+          tableName,
+          table,
+          tables,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          result,
+          pgPrimaryKeyPropNames(table),
+        );
+
+        return remapToGraphQLSingleOutput(enriched[0], tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError(e.message);
@@ -336,10 +378,13 @@ const generateUpdate = (
   db: PgAsyncDatabase<any, any, any>,
   tableName: string,
   table: PgTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   setArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs = {
     set: {
@@ -380,7 +425,20 @@ const generateUpdate = (
 
         const result = await query;
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
+        const enriched = await eagerLoadMutationRelations(
+          db,
+          tableName,
+          table,
+          tables,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          result,
+          pgPrimaryKeyPropNames(table),
+        );
+
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError(e.message);
@@ -555,28 +613,37 @@ export function generateSchemaData<
       db,
       tableName,
       schema[tableName] as PgTable,
+      tables,
+      namedRelations,
       insertInput,
       createArrayFieldName,
       typeName,
+      typeNameMapper,
       conflictDoNothing,
     );
     const insertSingleGenerated = generateInsertSingle(
       db,
       tableName,
       schema[tableName] as PgTable,
+      tables,
+      namedRelations,
       insertInput,
       createSingleFieldName,
       typeName,
+      typeNameMapper,
       conflictDoNothing,
     );
     const updateGenerated = generateUpdate(
       db,
       tableName,
       schema[tableName] as PgTable,
+      tables,
+      namedRelations,
       updateInput,
       tableFilters,
       updateFieldName,
       typeName,
+      typeNameMapper,
     );
     const deleteGenerated = generateDelete(
       db,

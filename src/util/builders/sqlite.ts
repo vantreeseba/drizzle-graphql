@@ -1,7 +1,7 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
 import { is, One, type Table } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
-import { type BaseSQLiteDatabase, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { type BaseSQLiteDatabase, getTableConfig, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, GraphQLResolveInfo, ThunkObjMap } from 'graphql';
 import {
   GraphQLError,
@@ -18,12 +18,14 @@ import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../t
 import {
   buildNamedRelations,
   createRelationResolverFactory,
+  eagerLoadMutationRelations,
   extractFilters,
   extractOrderBy,
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  getPrimaryKeyPropNames,
   type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
@@ -188,13 +190,24 @@ const generateSelectSingle = (
   };
 };
 
+/** Primary-key property names for a SQLite table, including table-level composite keys. */
+const sqlitePrimaryKeyPropNames = (table: SQLiteTable): string[] => {
+  const compositePkColumnNames = getTableConfig(table).primaryKeys.flatMap((pk: any) =>
+    pk.columns.map((c: any) => c.name),
+  );
+  return getPrimaryKeyPropNames(table, compositePkColumnNames);
+};
+
 const generateInsertArray = (
   db: BaseSQLiteDatabase<any, any, any, any>,
   tableName: string,
   table: SQLiteTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -222,7 +235,20 @@ const generateInsertArray = (
 
         const result = await db.insert(table).values(input).returning(columns).onConflictDoNothing();
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
+        const enriched = await eagerLoadMutationRelations(
+          db,
+          tableName,
+          table,
+          tables,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          result,
+          sqlitePrimaryKeyPropNames(table),
+        );
+
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError(e.message);
@@ -239,9 +265,12 @@ const generateInsertSingle = (
   db: BaseSQLiteDatabase<any, any, any, any>,
   tableName: string,
   table: SQLiteTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
@@ -269,7 +298,20 @@ const generateInsertSingle = (
           return undefined;
         }
 
-        return remapToGraphQLSingleOutput(result[0], tableName, table);
+        const enriched = await eagerLoadMutationRelations(
+          db,
+          tableName,
+          table,
+          tables,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          result,
+          sqlitePrimaryKeyPropNames(table),
+        );
+
+        return remapToGraphQLSingleOutput(enriched[0], tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError(e.message);
@@ -286,10 +328,13 @@ const generateUpdate = (
   db: BaseSQLiteDatabase<any, any, any, any>,
   tableName: string,
   table: SQLiteTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   setArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs = {
     set: {
@@ -330,7 +375,20 @@ const generateUpdate = (
 
         const result = await query;
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
+        const enriched = await eagerLoadMutationRelations(
+          db,
+          tableName,
+          table,
+          tables,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          result,
+          sqlitePrimaryKeyPropNames(table),
+        );
+
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {
         if (e instanceof Error) {
           throw new GraphQLError(e.message);
@@ -501,26 +559,35 @@ export const generateSchemaData = <
       db,
       tableName,
       schema[tableName] as SQLiteTable,
+      tables,
+      namedRelations,
       insertInput,
       createArrayFieldName,
       typeName,
+      typeNameMapper,
     );
     const insertSingleGenerated = generateInsertSingle(
       db,
       tableName,
       schema[tableName] as SQLiteTable,
+      tables,
+      namedRelations,
       insertInput,
       createSingleFieldName,
       typeName,
+      typeNameMapper,
     );
     const updateGenerated = generateUpdate(
       db,
       tableName,
       schema[tableName] as SQLiteTable,
+      tables,
+      namedRelations,
       updateInput,
       tableFilters,
       updateFieldName,
       typeName,
+      typeNameMapper,
     );
     const deleteGenerated = generateDelete(
       db,
