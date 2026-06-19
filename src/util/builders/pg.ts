@@ -257,6 +257,10 @@ const generateInsertArray = (
     },
   };
 
+  // Primary-key prop names are constant per table — derive them once at build time
+  // rather than re-running getTableConfig on every mutation request.
+  const pkNames = pgPrimaryKeyPropNames(table);
+
   return {
     name: fieldName,
     resolver: async (_source, args: { values: Record<string, any>[] }, _context, info) => {
@@ -270,7 +274,6 @@ const generateInsertArray = (
           deep: true,
         }) as ResolveTree;
 
-        const pkNames = pgPrimaryKeyPropNames(table);
         const columns = withPrimaryKeyColumns(
           extractSelectedColumnsFromTreeSQLFormat<PgColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
           table,
@@ -327,6 +330,9 @@ const generateInsertSingle = (
     },
   };
 
+  // Derived once at build time — PK prop names don't change per request.
+  const pkNames = pgPrimaryKeyPropNames(table);
+
   return {
     name: fieldName,
     resolver: async (_source, args: { values: Record<string, any> }, _context, info) => {
@@ -337,7 +343,6 @@ const generateInsertSingle = (
           deep: true,
         }) as ResolveTree;
 
-        const pkNames = pgPrimaryKeyPropNames(table);
         const columns = withPrimaryKeyColumns(
           extractSelectedColumnsFromTreeSQLFormat<PgColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
           table,
@@ -401,6 +406,9 @@ const generateUpdate = (
     },
   } as const satisfies GraphQLFieldConfigArgumentMap;
 
+  // Derived once at build time — PK prop names don't change per request.
+  const pkNames = pgPrimaryKeyPropNames(table);
+
   return {
     name: fieldName,
     resolver: async (_source, args: { where?: Filters<Table>; set: Record<string, any> }, _context, info) => {
@@ -411,7 +419,6 @@ const generateUpdate = (
           deep: true,
         }) as ResolveTree;
 
-        const pkNames = pgPrimaryKeyPropNames(table);
         const columns = withPrimaryKeyColumns(
           extractSelectedColumnsFromTreeSQLFormat<PgColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
           table,
