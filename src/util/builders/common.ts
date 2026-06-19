@@ -1372,12 +1372,14 @@ export const eagerLoadMutationRelations = async (
     return rows;
   }
 
-  // Re-fetch the columns the client selected, plus the PK so enriched rows can be
-  // mapped back to the mutated rows.
-  const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table);
+  // Re-fetch ONLY the primary key + relations: the scalar columns are already present
+  // on `rows` from RETURNING, so re-selecting them would transfer them a second time
+  // (and would lose them on the fallback path). We merge the fetched relations back in.
+  const pkColumns: Record<string, true> = {};
   for (const pk of pkNames) {
-    selectedColumns[pk] = true;
+    pkColumns[pk] = true;
   }
+  const relationNames = Object.keys(withParams);
 
   // Normalize bigint PK values to strings: JSON.stringify throws on bigint, and a
   // bigint and its string form never collide within a single column's values.
@@ -1399,7 +1401,7 @@ export const eagerLoadMutationRelations = async (
   let enriched: any[];
   try {
     enriched = await queryBase.findMany({
-      columns: selectedColumns,
+      columns: pkColumns,
       where: { RAW: whereRaw },
       with: withParams,
     });
@@ -1410,9 +1412,18 @@ export const eagerLoadMutationRelations = async (
     return rows;
   }
 
-  // Map enriched rows back onto the mutated rows, preserving original order. A row the
-  // re-fetch didn't return (e.g. deleted concurrently) keeps its original value rather
-  // than being dropped, so the result never reports fewer rows than were mutated.
-  const byKey = new Map(enriched.map((r) => [keyOf(r), r]));
-  return rows.map((r) => byKey.get(keyOf(r)) ?? r);
+  // Merge the fetched relations onto the RETURNING rows in place, preserving order. A row
+  // the re-fetch didn't return (e.g. deleted concurrently) keeps its scalar columns and
+  // its relations resolve lazily, so the result never reports fewer rows than were mutated.
+  const byKey = new Map(enriched.map((e) => [keyOf(e), e]));
+  for (const row of rows) {
+    const match = byKey.get(keyOf(row));
+    if (!match) {
+      continue;
+    }
+    for (const rel of relationNames) {
+      row[rel] = match[rel];
+    }
+  }
+  return rows;
 };
