@@ -1,0 +1,35 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Drizzle-GraphQL",
+  "description": "Automatically generate a fully-typed GraphQL schema (and customizable resolver/entity config) from a Drizzle ORM schema. Supports PostgreSQL, MySQL, and SQLite with N+1-safe relation resolving.",
+  "folders": [],
+  "excludeFolders": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "tests",
+    ".github"
+  ],
+  "excludeFiles": [
+    "index.cjs",
+    "index.js",
+    "index.cjs.map",
+    "index.js.map",
+    "index.d.ts",
+    "index.d.cts",
+    "package-lock.json",
+    "CHANGELOG.md"
+  ],
+  "rules": [
+    "Generate a GraphQL schema with `buildSchema(db, config?)`, which returns `{ schema, entities }`. `db` is a Drizzle instance constructed with relations (from `defineRelations`/`buildRelations`).",
+    "Use `schema` directly with any server that consumes a `GraphQLSchema` (e.g. GraphQL Yoga); use `entities` ({ queries, mutations, inputs, types, fieldResolvers }) to compose a custom schema.",
+    "The database dialect is auto-detected from the Drizzle instance: PostgreSQL (PgAsyncDatabase), MySQL (MySqlDatabase), or SQLite (BaseSQLiteDatabase).",
+    "Generated single-row queries use the `Single` suffix by default (e.g. `users` for a list, `usersSingle` for one row). Mutation field names default to the `create`/`update`/`delete` prefixes.",
+    "Relations are eager-loaded into a single round-trip via Drizzle's relational `with:` builder. Opt a relation out with `config.eagerLoadRelations` (boolean or `(tableName, relationName) => boolean`) and supply your own resolver.",
+    "Per-parent paginated to-many relations (relation fields using `limit`/`offset`) require window functions: PostgreSQL, MySQL 8.0+, or SQLite 3.25+.",
+    "Standalone request-batched relation resolvers are exported as `entities.fieldResolvers[TableName][relationName]` and dedupe sibling loads into one `IN (...)` query keyed on the GraphQL context.",
+    "Configure naming and behavior via `BuildSchemaConfig`: `mutations` (false to omit), `relationsDepthLimit`, `prefixes`, `suffixes`, `typeNameMapper`, `conflictDoNothing` (PG only), and `eagerLoadRelations`.",
+    "Peer dependencies: drizzle-orm ^1.0.0-rc.2, graphql >=16.3.0, graphql-parse-resolve-info ^4.13.0, graphql-scalars ^1.25.0."
+  ],
+  "previousVersions": []
+}

@@ -1,0 +1,130 @@
+# Drizzle-GraphQL
+
+> Automatically generate a fully-typed GraphQL schema from a Drizzle ORM schema. One call (`buildSchema(db)`) produces a ready-to-serve `GraphQLSchema` plus a set of composable `entities` (queries, mutations, inputs, types, and relation field resolvers). Supports PostgreSQL, MySQL, and SQLite, with relation resolving designed to avoid N+1 query explosions.
+
+Published to npm as `@vantreeseba/drizzle-graphql`. Source: https://github.com/vantreeseba/drizzle-graphql
+
+Key facts:
+- Pass a Drizzle database instance (constructed with relations from `defineRelations`/`buildRelations`) to `buildSchema`. The dialect (PostgreSQL / MySQL / SQLite) is auto-detected from the instance.
+- `buildSchema(db, config?)` returns `{ schema, entities }`.
+- `schema` is a `graphql` `GraphQLSchema` — usable directly by any server that consumes one (e.g. GraphQL Yoga, Apollo).
+- `entities` is `{ queries, mutations, inputs, types, fieldResolvers }` for building a custom schema by hand.
+- Peer dependencies: `drizzle-orm ^1.0.0-rc.2`, `graphql >=16.3.0`, `graphql-parse-resolve-info ^4.13.0`, `graphql-scalars ^1.25.0`.
+
+## Quick start
+
+Serve the generated schema as-is:
+
+```typescript
+import { createServer } from 'node:http'
+import { createYoga } from 'graphql-yoga'
+import { buildSchema } from 'drizzle-graphql'
+import { db } from './database' // your drizzle instance, built with relations
+
+const { schema } = buildSchema(db)
+const yoga = createYoga({ schema })
+createServer(yoga).listen(4000, () => {
+  console.info('Server is running on http://localhost:4000/graphql')
+})
+```
+
+## Generated operations
+
+For each table, `buildSchema` generates:
+- A **list query** (e.g. `users`) returning many rows, with `where`, `orderBy`, `offset`, `limit` args.
+- A **single query** (e.g. `usersSingle`, using the default `Single` suffix) returning one row.
+- **Insert** mutations (single + array), default-prefixed `create` (e.g. `createUsers`).
+- An **update** mutation, default-prefixed `update`.
+- A **delete** mutation, default-prefixed `delete`.
+
+> MySQL mutations return only a success flag (`{ isSuccess }`), no row payload. PostgreSQL and SQLite mutations return the affected rows.
+
+## Custom schemas with `entities`
+
+Use `entities` to cherry-pick generated fields, reuse generated types/inputs, and add custom resolvers:
+
+```typescript
+import { GraphQLList, GraphQLNonNull, GraphQLObjectType, GraphQLSchema } from 'graphql'
+import { buildSchema } from 'drizzle-graphql'
+import { db } from './database'
+
+const { entities } = buildSchema(db)
+
+const schema = new GraphQLSchema({
+  query: new GraphQLObjectType({
+    name: 'Query',
+    fields: {
+      users: entities.queries.users,            // reuse a generated query
+      customer: entities.queries.customersSingle,
+      customUsers: {
+        type: new GraphQLList(new GraphQLNonNull(entities.types.UsersItem)), // reuse generated type
+        args: { where: { type: entities.inputs.UsersFilters } },            // reuse generated input
+        resolve: async (source, args, context, info) => {
+          // your custom logic
+        },
+      },
+    },
+  }),
+  mutation: new GraphQLObjectType({ name: 'Mutation', fields: entities.mutations }),
+  types: [...Object.values(entities.types), ...Object.values(entities.inputs)],
+})
+```
+
+## Relations & N+1 handling
+
+- **Root queries** (`entities.queries.*`) eagerly load every requested relation in a single round-trip via Drizzle's relational query builder (`with:`), including nested relations and per-relation `where` / `orderBy` / `limit` / `offset`.
+- **Mutations (PostgreSQL & SQLite)** re-fetch affected rows by primary key (single or composite) through one relational query when the selection set includes relation fields. `delete` mutations use the request-scoped batch loader instead. MySQL mutations return only a success flag, so this does not apply.
+- **Custom schemas** can use standalone, request-batched relation resolvers exported as `entities.fieldResolvers[TableName][relationName]`. These dedupe all sibling loads in a request into one `IN (...)` query (keyed on the GraphQL `context`). Per-parent `limit`/`offset` on a to-many relation is applied across the whole batch with a `ROW_NUMBER() OVER (PARTITION BY ...)` window function — still one query.
+
+```typescript
+const usersPostsResolver = entities.fieldResolvers.Users.posts
+```
+
+> Per-parent paginated relations (a to-many relation field with `limit` or `offset`) rely on SQL window functions, which require PostgreSQL, MySQL 8.0+, or SQLite 3.25+. Relations without pagination and all other paths have no such requirement.
+
+### Overriding a relation's resolver without overfetching
+
+By default, any selected relation is fetched from the database. To resolve a relation yourself (cache, another service, a dataloader), opt it out of eager loading with `eagerLoadRelations`, then attach your own resolver:
+
+```typescript
+import { addResolversToSchema } from '@graphql-tools/schema'
+
+const { schema } = buildSchema(db, {
+  // Exclude Users.posts from the parent query's `with:`. Other relations keep eager-loading.
+  eagerLoadRelations: (table, relation) => !(table === 'Users' && relation === 'posts'),
+})
+
+const finalSchema = addResolversToSchema({
+  schema,
+  resolvers: {
+    Users: { posts: (parent, args, context) => context.postsLoader.load(parent.id) },
+  },
+})
+```
+
+Opting a relation out does not remove the field — it keeps resolving lazily via the request-scoped batch loader. Table/relation names are the Drizzle schema keys, matching the keys of `entities.fieldResolvers`.
+
+## Configuration (`BuildSchemaConfig`)
+
+Second argument to `buildSchema(db, config?)`:
+
+- `mutations?: boolean` — set `false` to omit mutations from the returned schema. Defaults to `true`.
+- `relationsDepthLimit?: number` — non-negative integer limiting relation-field generation depth. `0` = no relation fields (flat, columns-only schema). `undefined` (default) = unlimited. The principal useful values are `0` and `undefined`.
+- `prefixes?: { insert?; delete?; update? }` — customize mutation name prefixes. Default `{ insert: 'create', delete: 'delete', update: 'update' }`.
+- `suffixes?: { list?; single? }` — customize query name suffixes. Default `{ list: '', single: 'Single' }`. List and single suffixes cannot be identical unless a `typeNameMapper` is provided.
+- `conflictDoNothing?: boolean` — (PostgreSQL only) apply `ON CONFLICT DO NOTHING` to inserts. Default `false`.
+- `typeNameMapper?: (tableName: string) => { singular: string; plural: string } | undefined` — customize generated type/field names per table.
+- `eagerLoadRelations?: boolean | ((tableName, relationName) => boolean)` — `true` (default) eager-loads all relations; `false` never does (everything resolves lazily via batched field resolvers); a predicate decides per relation.
+
+## Public API exports
+
+From `drizzle-graphql`:
+- `buildSchema(db, config?)` — main entry point.
+- `createRelationResolverFactory`, `extractFilters`, `extractOrderBy`, `extractRelationJoinColumns` — helpers for custom relation resolvers.
+- Types: `AnyDrizzleDB`, `BuildSchemaConfig`, `GeneratedData`, `GeneratedEntities`, `GeneratedInputs`, `GeneratedOutputs`, `QueriesCore`, `MutationsCore`, `MutationReturnlessResult`, `SelectResolver`, `SelectSingleResolver`, `InsertResolver`, `InsertArrResolver`, `UpdateResolver`, `DeleteResolver`, `RelationResolverFactory`, `TableNamedRelations`, and Drizzle schema-extraction utility types (`ExtractTables`, `ExtractRelations`, `ExtractTableRelations`, `ExtractTableByName`).
+
+## Optional
+
+- [README](https://github.com/vantreeseba/drizzle-graphql/blob/main/README.md): full usage walkthrough with examples.
+- [AGENTS.md](https://github.com/vantreeseba/drizzle-graphql/blob/main/AGENTS.md): source structure, commands, and code style.
+- [CHANGELOG](https://github.com/vantreeseba/drizzle-graphql/blob/main/CHANGELOG.md): release history.
