@@ -21,13 +21,11 @@ import {
   computeResolverFieldNames,
   createRelationResolverFactory,
   extractFilters,
-  extractOrderBy,
-  extractRelationsParams,
-  extractSelectedColumnsFromTree,
   generateTableTypes,
   getPrimaryKeyPropNamesFromConfig,
   pruneNonEagerRelations,
   type RelationResolverFactory,
+  runRelationalSelect,
   selectArrayArgs,
   selectSingleArgs,
   type TablesRelationalConfig,
@@ -36,12 +34,7 @@ import {
   toGraphQLError,
 } from '../builders/common.ts';
 
-import {
-  remapFromGraphQLArrayInput,
-  remapFromGraphQLSingleInput,
-  remapToGraphQLArrayOutput,
-  remapToGraphQLSingleOutput,
-} from '../data-mappers/index.ts';
+import { remapFromGraphQLArrayInput, remapFromGraphQLSingleInput } from '../data-mappers/index.ts';
 import type { CreatedResolver, Filters, TableNamedRelations, TableSelectArgs } from './types.ts';
 
 const generateSelectArray = (
@@ -72,34 +65,21 @@ const generateSelectArray = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, limit, orderBy, where } = args;
-
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const query = queryBase.findMany({
-          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
-          offset,
-          limit,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
-          // use it directly so column refs match the CTE alias.
-          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
-          with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined,
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
+        return await runRelationalSelect({
+          queryBase,
+          tables,
+          tableName,
+          table,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          ...args,
+          single: false,
         });
-
-        const result = await query;
-
-        return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError((e as any).message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -134,36 +114,21 @@ const generateSelectSingle = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, orderBy, where } = args;
-
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const query = queryBase.findFirst({
-          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
-          offset,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
-          // use it directly so column refs match the CTE alias.
-          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
-          with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined,
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
+        return await runRelationalSelect({
+          queryBase,
+          tables,
+          tableName,
+          table,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          ...args,
+          single: true,
         });
-
-        const result = await query;
-        if (!result) {
-          return undefined;
-        }
-
-        return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError((e as any).message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,

@@ -21,14 +21,13 @@ import {
   eagerLoadMutationRelations,
   extractFilters,
   extractOrderBy,
-  extractRelationsParams,
-  extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
   getPrimaryKeyPropNamesFromConfig,
   prepareMutationRelationColumns,
   pruneNonEagerRelations,
   type RelationResolverFactory,
+  runRelationalSelect,
   selectArrayArgs,
   selectSingleArgs,
   type TablesRelationalConfig,
@@ -69,54 +68,44 @@ const generateSelectArray = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, limit, orderBy, where } = args;
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
 
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table);
-
-        let result: any[];
         if (queryBase) {
-          const withParams = relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined;
-
-          result = await queryBase.findMany({
-            columns: selectedColumns,
-            offset,
-            limit,
-            // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
-            // d0, d1) — use it directly so column refs match the CTE alias.
-            orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-            where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
-            with: withParams,
-          });
-        } else {
-          // Fallback for tables without relational query builder support.
-          // Use SQL column objects (not Record<string,true>) so db.select() receives valid expressions.
-          const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-            parsedInfo.fieldsByTypeName[typeName]!,
+          return await runRelationalSelect({
+            queryBase,
+            tables,
+            tableName,
             table,
-          );
-          let q = db.select(selectedColumnsSql).from(table);
-          if (where) {
-            q = q.where(extractFilters(table, tableName, where)) as any;
-          }
-          if (orderBy) {
-            q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
-          }
-          if (offset) {
-            q = q.offset(offset) as any;
-          }
-          if (limit) {
-            q = q.limit(limit) as any;
-          }
-          result = await q;
+            relationMap,
+            typeName,
+            typeNameMapper,
+            parsedInfo,
+            ...args,
+            single: false,
+          });
         }
 
-        return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
+        // Fallback for tables without relational query builder support.
+        // Use SQL column objects (not Record<string,true>) so db.select() receives valid expressions.
+        const { offset, limit, orderBy, where } = args;
+        const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
+          parsedInfo.fieldsByTypeName[typeName]!,
+          table,
+        );
+        let q = db.select(selectedColumnsSql).from(table);
+        if (where) {
+          q = q.where(extractFilters(table, tableName, where)) as any;
+        }
+        if (orderBy) {
+          q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
+        }
+        if (offset) {
+          q = q.offset(offset) as any;
+        }
+        if (limit) {
+          q = q.limit(limit) as any;
+        }
+        return remapToGraphQLArrayOutput(await q, tableName, table, relationMap);
       } catch (e) {
         throw toGraphQLError(e);
       }
@@ -149,52 +138,42 @@ const generateSelectSingle = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, orderBy, where } = args;
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
 
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table);
-
-        let result: any;
         if (queryBase) {
-          result = await queryBase.findFirst({
-            columns: selectedColumns,
-            offset,
-            // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
-            // d0, d1) — use it directly so column refs match the CTE alias.
-            orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-            where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
-            with: relationMap[tableName]
-              ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-              : undefined,
-          });
-        } else {
-          // Fallback for tables without relational query builder support.
-          const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-            parsedInfo.fieldsByTypeName[typeName]!,
+          return await runRelationalSelect({
+            queryBase,
+            tables,
+            tableName,
             table,
-          );
-          let q = db.select(selectedColumnsSql).from(table);
-          if (where) {
-            q = q.where(extractFilters(table, tableName, where)) as any;
-          }
-          if (orderBy) {
-            q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
-          }
-          if (offset) {
-            q = q.offset(offset) as any;
-          }
-          const rows = await q.limit(1);
-          result = rows[0];
+            relationMap,
+            typeName,
+            typeNameMapper,
+            parsedInfo,
+            ...args,
+            single: true,
+          });
         }
 
-        if (!result) {
-          return undefined;
+        // Fallback for tables without relational query builder support.
+        const { offset, orderBy, where } = args;
+        const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
+          parsedInfo.fieldsByTypeName[typeName]!,
+          table,
+        );
+        let q = db.select(selectedColumnsSql).from(table);
+        if (where) {
+          q = q.where(extractFilters(table, tableName, where)) as any;
         }
-
-        return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
+        if (orderBy) {
+          q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
+        }
+        if (offset) {
+          q = q.offset(offset) as any;
+        }
+        const rows = await q.limit(1);
+        const result = rows[0];
+        return result ? remapToGraphQLSingleOutput(result, tableName, table, relationMap) : undefined;
       } catch (e) {
         throw toGraphQLError(e);
       }

@@ -21,15 +21,13 @@ import {
   createRelationResolverFactory,
   eagerLoadMutationRelations,
   extractFilters,
-  extractOrderBy,
-  extractRelationsParams,
-  extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
   getPrimaryKeyPropNamesFromConfig,
   prepareMutationRelationColumns,
   pruneNonEagerRelations,
   type RelationResolverFactory,
+  runRelationalSelect,
   selectArrayArgs,
   selectSingleArgs,
   type TablesRelationalConfig,
@@ -74,28 +72,19 @@ const generateSelectArray = (
     name: fieldName,
     resolver: async (_source: any, args: Partial<TableSelectArgs>, _context: any, info: GraphQLResolveInfo) => {
       try {
-        const { offset, limit, orderBy, where } = args;
-
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const query = queryBase.findMany({
-          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
-          offset,
-          limit,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
-          // use it directly so column refs match the CTE alias.
-          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
-          with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined,
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
+        return await runRelationalSelect({
+          queryBase,
+          tables,
+          tableName,
+          table,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          ...args,
+          single: false,
         });
-
-        const result = await query;
-
-        return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
       } catch (e) {
         throw toGraphQLError(e);
       }
@@ -132,30 +121,19 @@ const generateSelectSingle = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, orderBy, where } = args;
-
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const query = queryBase.findFirst({
-          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
-          offset,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
-          // use it directly so column refs match the CTE alias.
-          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
-          with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined,
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
+        return await runRelationalSelect({
+          queryBase,
+          tables,
+          tableName,
+          table,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          ...args,
+          single: true,
         });
-
-        const result = await query;
-        if (!result) {
-          return undefined;
-        }
-
-        return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
       } catch (e) {
         throw toGraphQLError(e);
       }

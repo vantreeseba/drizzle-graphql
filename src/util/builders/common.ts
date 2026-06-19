@@ -54,7 +54,7 @@ import {
 import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { getOrCreateLoader } from '../batch-loader/index.ts';
 import { capitalize, uncapitalize } from '../case-ops/index.ts';
-import { remapFromGraphQLCore, remapToGraphQLArrayOutput } from '../data-mappers/index.ts';
+import { remapFromGraphQLCore, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
 import { drizzleColumnToGraphQLType } from '../type-converter/index.ts';
 import type {
   ConvertedColumn,
@@ -1477,6 +1477,64 @@ export const selectSingleArgs = (
   orderBy: { type: orderArgs },
   where: { type: filterArgs },
 });
+
+/**
+ * Runs the relational-query-builder select shared by every dialect's `generateSelect*`
+ * resolver: selected columns + offset/limit + aliased orderBy/where callbacks + the eager
+ * `with:` relation params, then remaps the result. `single` switches between
+ * findFirst/findMany (and the single path omits `limit`). The PG fallback for tables
+ * without RQB support stays in pg.ts; this covers the common RQB path for all three.
+ */
+export const runRelationalSelect = async (opts: {
+  queryBase: any;
+  tables: Record<string, Table>;
+  tableName: string;
+  table: Table;
+  relationMap: Record<string, Record<string, TableNamedRelations>>;
+  typeName: string;
+  typeNameMapper: TypeNameMapper | undefined;
+  parsedInfo: ResolveTree;
+  offset?: number;
+  limit?: number;
+  orderBy?: any;
+  where?: any;
+  single: boolean;
+}): Promise<any> => {
+  const {
+    queryBase,
+    tables,
+    tableName,
+    table,
+    relationMap,
+    typeName,
+    typeNameMapper,
+    parsedInfo,
+    offset,
+    orderBy,
+    where,
+    single,
+  } = opts;
+  const params: any = {
+    columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
+    offset,
+    // drizzle-orm v1 RQB calls orderBy/where with the aliased table proxy — use it
+    // directly so column refs match the CTE alias.
+    orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
+    where: where ? { RAW: (aliasedTable: Table) => extractFilters(aliasedTable, tableName, where) } : undefined,
+    with: relationMap[tableName]
+      ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+      : undefined,
+  };
+
+  if (single) {
+    const result = await queryBase.findFirst(params);
+    return result ? remapToGraphQLSingleOutput(result, tableName, table, relationMap) : undefined;
+  }
+
+  params.limit = opts.limit;
+  const result = await queryBase.findMany(params);
+  return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
+};
 
 /**
  * After a mutation, re-fetch the mutated rows through the relational query builder so the
