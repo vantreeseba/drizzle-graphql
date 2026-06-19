@@ -155,6 +155,36 @@ export const buildNamedRelations = (
 };
 
 /**
+ * Records each relation's target-table primary-key property names on the relation entry,
+ * so the pagination paths (the window-function batch loader and the eager `with:` orderBy
+ * default) can fall back to a deterministic PK order without re-deriving it per request.
+ *
+ * Composite primary keys are only visible through the dialect's getTableConfig, so the
+ * dialect builder passes a `resolvePkNames` that threads the composite column names in.
+ * Mutates the relation entries in place (they are shared with the pruned eager map and
+ * the resolver factory, so attaching once covers every consumer).
+ */
+export const attachTargetPrimaryKeys = (
+  namedRelations: Record<string, Record<string, TableNamedRelations>>,
+  tables: Record<string, Table>,
+  resolvePkNames: (table: Table) => string[],
+): void => {
+  const cache = new Map<string, readonly string[]>();
+  for (const rels of Object.values(namedRelations)) {
+    for (const relEntry of Object.values(rels)) {
+      const { targetTableName } = relEntry;
+      let pk = cache.get(targetTableName);
+      if (!pk) {
+        const targetTable = tables[targetTableName];
+        pk = targetTable ? resolvePkNames(targetTable) : [];
+        cache.set(targetTableName, pk);
+      }
+      relEntry.targetPkNames = pk;
+    }
+  }
+};
+
+/**
  * Extracts the join column info from a drizzle-orm v1 Relation object.
  * Returns the JS property name of the local column on the parent table and the
  * Column object for the foreign column on the target table, or undefined if the
@@ -215,12 +245,14 @@ const batchedPaginatedRelationQuery = async (
   orderByArg: any,
   limit: number | null,
   offset: number | null,
+  pkNames: readonly string[],
 ): Promise<any[]> => {
   const cols = getColumns(targetTable);
 
   // Always tiebreak the window by the target's primary key so per-parent limit/offset
   // slices are deterministic even when the client supplies no (or a non-unique) orderBy.
-  const pkOrderExprs = getPrimaryKeyPropNames(targetTable)
+  // pkNames is resolved at build time and includes composite keys.
+  const pkOrderExprs = pkNames
     .map((n) => cols[n])
     .filter(Boolean)
     .map((col) => asc(col!));
@@ -280,6 +312,8 @@ export const createRelationResolverFactory =
     }
 
     const { localColPropName, foreignCol, foreignColPropName } = joinCols;
+    // Resolved at build time (composite keys included) — used to tiebreak paginated batches.
+    const targetPkNames = relEntry.targetPkNames ?? [];
 
     return async (parent, args, context) => {
       // Eager path: the parent resolver pre-fetched this relation via Drizzle's `with`.
@@ -324,6 +358,7 @@ export const createRelationResolverFactory =
             orderByArg,
             limit ?? null,
             offset ?? null,
+            targetPkNames,
           );
         } else {
           // Use plain db.select() so column refs are never aliased — avoids drizzle-orm v1
@@ -1165,7 +1200,8 @@ const extractRelationsParamsInner = (
 
   const args: Record<string, Partial<ProcessedTableSelectArgs>> = {};
 
-  for (const [relName, { targetTableName }] of Object.entries(relationsForTable)) {
+  for (const [relName, relEntry] of Object.entries(relationsForTable)) {
+    const { targetTableName, targetPkNames } = relEntry;
     // The relation field resolves to the target table's own type, e.g. "Posts" not "UsersPostsRelation".
     const relTypeName = resolveTypeName(targetTableName, typeNameMapper);
     // Look up by field name OR by alias (when the caller uses an alias for the relation).
@@ -1205,14 +1241,16 @@ const extractRelationsParamsInner = (
       : undefined;
     // When a relation is paginated (limit/offset) but unordered, default to the target's
     // primary key so the per-parent slice is deterministic. Drizzle's RQB calls orderBy
-    // with the aliased table proxy, so resolve the PK columns from it.
+    // with the aliased table proxy, so resolve the PK columns from it. targetPkNames is
+    // resolved at build time and includes composite keys.
     const hasPagination = offset != null || limit != null;
+    const pkNames = targetPkNames ?? [];
     thisRecord.orderBy = relationArgs?.orderBy
       ? (aliasedTable: Table) => extractOrderBy(aliasedTable, relationArgs.orderBy!)
-      : hasPagination
+      : hasPagination && pkNames.length
         ? (aliasedTable: Table) => {
             const aliasedCols = getColumns(aliasedTable);
-            return getPrimaryKeyPropNames(tables[targetTableName]!)
+            return pkNames
               .map((n) => aliasedCols[n])
               .filter(Boolean)
               .map((col) => asc(col!));
@@ -1340,7 +1378,6 @@ export const withPrimaryKeyColumns = <T extends Record<string, any>>(
 export const eagerLoadMutationRelations = async (
   db: any,
   tableName: string,
-  table: Table,
   tables: Record<string, Table>,
   relationMap: Record<string, Record<string, TableNamedRelations>>,
   typeName: string,
@@ -1366,11 +1403,12 @@ export const eagerLoadMutationRelations = async (
     return rows;
   }
 
-  // Every mutated row must carry its primary-key value so the re-fetch can be keyed
-  // back to it. Callers force the PK into RETURNING, but if a value is still missing
-  // (e.g. a table without a real PK) we can't re-key — fall back to the raw rows and
-  // let relations resolve lazily through the batch loader.
-  if (rows.some((row) => pkNames.some((n) => row[n] == null))) {
+  // Only rows that carry every PK value can be re-keyed. Callers force the PK into
+  // RETURNING, but if a value is still missing for some rows, eager-load just those that
+  // are keyable and leave the rest untouched (their relations resolve lazily) rather than
+  // bailing the whole batch.
+  const keyableRows = rows.filter((row) => pkNames.every((n) => row[n] != null));
+  if (!keyableRows.length) {
     return rows;
   }
 
@@ -1391,13 +1429,31 @@ export const eagerLoadMutationRelations = async (
   let whereRaw: (aliased: any) => SQL | undefined;
   if (pkNames.length === 1) {
     const pkName = pkNames[0]!;
-    const ids = rows.map((r) => r[pkName]);
+    const ids = keyableRows.map((r) => r[pkName]);
     // drizzle-orm v1 RQB calls the where callback with the aliased table proxy;
     // reference the PK through it so the column ref matches the CTE alias.
     whereRaw = (aliased: any) => inArray(aliased[pkName], ids);
   } else {
-    // Composite PK: OR together one equality-tuple per mutated row.
-    whereRaw = (aliased: any) => or(...rows.map((row) => and(...pkNames.map((n) => eq(aliased[n], row[n])))));
+    // Composite PK: use a row-value IN — `(a, b) IN ((..), (..))` — so the database can
+    // plan it as a set membership test, instead of an OR of N per-row AND-tuples that
+    // blows up for large bulk mutations.
+    whereRaw = (aliased: any) => {
+      const lhs = sql.join(
+        pkNames.map((n) => sql`${aliased[n]}`),
+        sql`, `,
+      );
+      const tuples = sql.join(
+        keyableRows.map(
+          (row) =>
+            sql`(${sql.join(
+              pkNames.map((n) => sql`${row[n]}`),
+              sql`, `,
+            )})`,
+        ),
+        sql`, `,
+      );
+      return sql`(${lhs}) in (${tuples})`;
+    };
   }
 
   let enriched: any[];

@@ -16,6 +16,7 @@ import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  attachTargetPrimaryKeys,
   buildNamedRelations,
   createRelationResolverFactory,
   eagerLoadMutationRelations,
@@ -245,7 +246,6 @@ const generateInsertArray = (
         const enriched = await eagerLoadMutationRelations(
           db,
           tableName,
-          table,
           tables,
           relationMap,
           typeName,
@@ -312,7 +312,6 @@ const generateInsertSingle = (
         const enriched = await eagerLoadMutationRelations(
           db,
           tableName,
-          table,
           tables,
           relationMap,
           typeName,
@@ -393,7 +392,6 @@ const generateUpdate = (
         const enriched = await eagerLoadMutationRelations(
           db,
           tableName,
-          table,
           tables,
           relationMap,
           typeName,
@@ -495,6 +493,9 @@ export const generateSchemaData = <
 
   // Build namedRelations from the drizzle-orm v1 relations config.
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Record each relation target's (composite-aware) primary key for deterministic
+  // paginated ordering. Must run before pruning / type generation (shared entry objects).
+  attachTargetPrimaryKeys(namedRelations, tables, sqlitePrimaryKeyPropNames);
   // Pruned map for query/mutation resolvers' `with:`; type generation keeps the full map.
   const eagerRelations = pruneNonEagerRelations(namedRelations, shouldEagerLoad);
 

@@ -18,6 +18,12 @@ import type { ConvertedColumn, ConvertedRelationColumnWithArgs } from '../type-c
 export type TableNamedRelations = {
   relation: Relation;
   targetTableName: string;
+  /**
+   * Property names of the target table's primary key, resolved at build time (composite
+   * keys included, via the dialect's getTableConfig). Used to default paginated relations
+   * to a deterministic PK order. Empty when the target has no detectable primary key.
+   */
+  targetPkNames?: readonly string[];
 };
 
 export type TableSelectArgs = {

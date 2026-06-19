@@ -15,6 +15,7 @@ import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { parseResolveInfo } from 'graphql-parse-resolve-info';
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  attachTargetPrimaryKeys,
   buildNamedRelations,
   createRelationResolverFactory,
   eagerLoadMutationRelations,
@@ -289,7 +290,6 @@ const generateInsertArray = (
         const enriched = await eagerLoadMutationRelations(
           db,
           tableName,
-          table,
           tables,
           relationMap,
           typeName,
@@ -362,7 +362,6 @@ const generateInsertSingle = (
         const enriched = await eagerLoadMutationRelations(
           db,
           tableName,
-          table,
           tables,
           relationMap,
           typeName,
@@ -443,7 +442,6 @@ const generateUpdate = (
         const enriched = await eagerLoadMutationRelations(
           db,
           tableName,
-          table,
           tables,
           relationMap,
           typeName,
@@ -548,6 +546,10 @@ export function generateSchemaData<
   // Flatten drizzle-orm v1 TablesRelationalConfig into the canonical shape
   // used throughout common.ts: Record<tableName, Record<relName, TableNamedRelations>>
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Record each relation target's primary key (composite-aware) so paginated relations
+  // default to a deterministic PK order. Must run before pruning / type generation, which
+  // share these entry objects.
+  attachTargetPrimaryKeys(namedRelations, tables, pgPrimaryKeyPropNames);
   // Relations to eager-load via `with:`. Query/mutation resolvers use this pruned map so
   // opted-out relations never overfetch; type generation keeps the full map so their
   // fields still exist and resolve lazily.

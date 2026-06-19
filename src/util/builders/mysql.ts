@@ -1,6 +1,6 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
 import { is, One, type Table } from 'drizzle-orm';
-import { type MySqlDatabase, MySqlTable } from 'drizzle-orm/mysql-core';
+import { getTableConfig, type MySqlDatabase, MySqlTable } from 'drizzle-orm/mysql-core';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, ThunkObjMap } from 'graphql';
 import {
@@ -17,6 +17,7 @@ import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  attachTargetPrimaryKeys,
   buildNamedRelations,
   createRelationResolverFactory,
   extractFilters,
@@ -24,6 +25,7 @@ import {
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   generateTableTypes,
+  getPrimaryKeyPropNames,
   pruneNonEagerRelations,
   type RelationResolverFactory,
   type TablesRelationalConfig,
@@ -349,6 +351,14 @@ const generateDelete = (
   };
 };
 
+/** Primary-key property names for a MySQL table, including table-level composite keys. */
+const mysqlPrimaryKeyPropNames = (table: MySqlTable): string[] => {
+  const compositePkColumnNames = getTableConfig(table).primaryKeys.flatMap((pk: any) =>
+    pk.columns.map((c: any) => c.name),
+  );
+  return getPrimaryKeyPropNames(table, compositePkColumnNames);
+};
+
 export const generateSchemaData = <
   TDrizzleInstance extends MySqlDatabase<any, any, any, any>,
   TSchema extends Record<string, Table | unknown>,
@@ -376,6 +386,9 @@ export const generateSchemaData = <
 
   // Build namedRelations from the drizzle-orm v1 relations config.
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Record each relation target's (composite-aware) primary key for deterministic
+  // paginated ordering. Must run before pruning / type generation (shared entry objects).
+  attachTargetPrimaryKeys(namedRelations, tables, mysqlPrimaryKeyPropNames);
   // Pruned map for query resolvers' `with:`; type generation keeps the full map.
   const eagerRelations = pruneNonEagerRelations(namedRelations, shouldEagerLoad);
 
