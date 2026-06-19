@@ -3749,3 +3749,44 @@ describe.sequential('__typename with data tests', async () => {
     });
   });
 });
+
+describe.sequential('Mutation relation eager-load tests', () => {
+  it('insert single selecting a relation but NOT the primary key resolves the relation', async () => {
+    // Selection omits `id`; the PK must be force-included in RETURNING so the eager
+    // re-fetch keys on it. Before the fix this returned a null relation.
+    const res = await ctx.gql.queryGql(/* GraphQL */ `
+      mutation {
+        createPostsSingle(values: { id: 9100, authorId: 1, content: "NOPK" }) {
+          content
+          author { id name }
+        }
+      }
+    `);
+
+    expect(res.errors).toBeUndefined();
+    expect(res.data?.createPostsSingle).toStrictEqual({
+      content: 'NOPK',
+      author: { id: 1, name: 'FirstUser' },
+    });
+  });
+
+  it('insert array selecting a relation but NOT the primary key returns every row with its relation', async () => {
+    const res = await ctx.gql.queryGql(/* GraphQL */ `
+      mutation {
+        createPosts(values: [
+          { id: 9201, authorId: 1, content: "A" },
+          { id: 9202, authorId: 5, content: "B" }
+        ]) {
+          content
+          author { id name }
+        }
+      }
+    `);
+
+    expect(res.errors).toBeUndefined();
+    const posts: any[] = res.data?.createPosts ?? [];
+    expect(posts).toHaveLength(2);
+    expect(posts.find((p) => p.content === 'A')?.author?.name).toBe('FirstUser');
+    expect(posts.find((p) => p.content === 'B')?.author?.id).toBe(5);
+  });
+});

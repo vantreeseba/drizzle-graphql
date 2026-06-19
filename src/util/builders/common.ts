@@ -37,6 +37,7 @@ import {
   One,
   or,
   type SQL,
+  sql,
 } from 'drizzle-orm';
 import type { GraphQLFieldResolver } from 'graphql';
 import {
@@ -52,7 +53,7 @@ import {
 } from 'graphql';
 import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { getOrCreateLoader } from '../batch-loader/index.ts';
-import { capitalize } from '../case-ops/index.ts';
+import { capitalize, uncapitalize } from '../case-ops/index.ts';
 import { remapFromGraphQLCore, remapToGraphQLArrayOutput, remapToGraphQLSingleOutput } from '../data-mappers/index.ts';
 import { drizzleColumnToGraphQLType } from '../type-converter/index.ts';
 import type {
@@ -154,6 +155,36 @@ export const buildNamedRelations = (
 };
 
 /**
+ * Records each relation's target-table primary-key property names on the relation entry,
+ * so the pagination paths (the window-function batch loader and the eager `with:` orderBy
+ * default) can fall back to a deterministic PK order without re-deriving it per request.
+ *
+ * Composite primary keys are only visible through the dialect's getTableConfig, so the
+ * dialect builder passes a `resolvePkNames` that threads the composite column names in.
+ * Mutates the relation entries in place (they are shared with the pruned eager map and
+ * the resolver factory, so attaching once covers every consumer).
+ */
+export const attachTargetPrimaryKeys = (
+  namedRelations: Record<string, Record<string, TableNamedRelations>>,
+  tables: Record<string, Table>,
+  resolvePkNames: (table: Table) => string[],
+): void => {
+  const cache = new Map<string, readonly string[]>();
+  for (const rels of Object.values(namedRelations)) {
+    for (const relEntry of Object.values(rels)) {
+      const { targetTableName } = relEntry;
+      let pk = cache.get(targetTableName);
+      if (!pk) {
+        const targetTable = tables[targetTableName];
+        pk = targetTable ? resolvePkNames(targetTable) : [];
+        cache.set(targetTableName, pk);
+      }
+      relEntry.targetPkNames = pk;
+    }
+  }
+};
+
+/**
  * Extracts the join column info from a drizzle-orm v1 Relation object.
  * Returns the JS property name of the local column on the parent table and the
  * Column object for the foreign column on the target table, or undefined if the
@@ -195,41 +226,66 @@ export type RelationResolverFactory = (params: {
   isOne: boolean;
 }) => GraphQLFieldResolver<any, any> | undefined;
 
-const directRelationQuery = async (
+/**
+ * Fetches a to-many relation with per-parent limit/offset for ALL parents in a
+ * single query, using a window function (ROW_NUMBER() OVER (PARTITION BY fk ...)).
+ *
+ * This replaces the previous per-parent fallback that issued one query per parent
+ * (true N+1) whenever pagination args were present. Each parent gets its own
+ * limit/offset window while the database is hit exactly once for the whole batch.
+ *
+ * Window functions require PostgreSQL, MySQL >= 8.0, or SQLite >= 3.25.
+ * Returns raw rows (NOT remapped); the caller groups + remaps them.
+ */
+const batchedPaginatedRelationQuery = async (
   db: any,
   targetTable: Table,
-  targetTableName: string,
   foreignCol: Column,
-  localValue: any,
-  whereArg: any,
+  whereCondition: SQL | undefined,
   orderByArg: any,
-  limit: number | undefined,
-  offset: number | undefined,
-  isOne: boolean,
-): Promise<any> => {
-  const whereCondition = and(
-    eq(foreignCol, localValue),
-    whereArg ? extractFilters(targetTable, targetTableName, whereArg) : undefined,
-  );
+  limit: number | null,
+  offset: number | null,
+  pkNames: readonly string[],
+): Promise<any[]> => {
+  const cols = getColumns(targetTable);
 
-  let q = db.select().from(targetTable).where(whereCondition) as any;
-  if (orderByArg) {
-    q = q.orderBy(...extractOrderBy(targetTable, orderByArg));
-  }
-  if (offset != null) {
-    q = q.offset(offset);
-  }
+  // Always tiebreak the window by the target's primary key so per-parent limit/offset
+  // slices are deterministic even when the client supplies no (or a non-unique) orderBy.
+  // pkNames is resolved at build time and includes composite keys.
+  const orderExprs = [
+    ...(orderByArg ? extractOrderBy(targetTable, orderByArg) : []),
+    ...primaryKeyOrderExprs(targetTable, pkNames),
+  ];
+  const orderClause = orderExprs.length ? sql` order by ${sql.join(orderExprs, sql`, `)}` : sql``;
+  // Namespaced alias so it can't collide with a real column on the target table.
+  const RN = '__drizzle_graphql_rn';
+  const rowNumber = sql`row_number() over (partition by ${foreignCol}${orderClause})`.as(RN);
+
+  // Subquery: every target column plus a per-partition row number.
+  const sub = db
+    .select({ ...cols, [RN]: rowNumber })
+    .from(targetTable)
+    .where(whereCondition)
+    .as('__paginated');
+
+  // Outer: keep only the rows that fall inside each parent's window.
+  const lower = offset ?? 0;
+  const windowConds: any[] = [gt(sub[RN], lower)];
   if (limit != null) {
-    q = q.limit(limit);
+    windowConds.push(lte(sub[RN], lower + limit));
   }
-  const rows = await q;
-  if (isOne) {
-    if (!rows[0]) {
-      return null;
-    }
-    return remapToGraphQLSingleOutput(rows[0], targetTableName, targetTable);
+
+  const rows: any[] = await db
+    .select()
+    .from(sub)
+    .where(and(...windowConds))
+    .orderBy(sub[RN]);
+
+  // Strip the helper column so it doesn't leak into remapping/output.
+  for (const row of rows) {
+    delete row[RN];
   }
-  return remapToGraphQLArrayOutput(rows, targetTableName, targetTable);
+  return rows;
 };
 
 /**
@@ -257,6 +313,8 @@ export const createRelationResolverFactory =
     }
 
     const { localColPropName, foreignCol, foreignColPropName } = joinCols;
+    // Resolved at build time (composite keys included) — used to tiebreak paginated batches.
+    const targetPkNames = relEntry.targetPkNames ?? [];
 
     return async (parent, args, context) => {
       // Eager path: the parent resolver pre-fetched this relation via Drizzle's `with`.
@@ -271,24 +329,16 @@ export const createRelationResolverFactory =
 
       const { where: whereArg, orderBy: orderByArg, limit, offset } = (args ?? {}) as any;
 
-      // Pagination args prevent batching — execute a direct per-item query.
-      if (limit != null || offset != null) {
-        return directRelationQuery(
-          db,
-          targetTable,
-          targetTableName,
-          foreignCol,
-          localValue,
-          whereArg,
-          orderByArg,
-          limit,
-          offset,
-          isOne,
-        );
-      }
-
-      // Batch path: collect all sibling calls in this tick and execute one IN-clause query.
-      const argsKey = JSON.stringify({ where: whereArg ?? null, orderBy: orderByArg ?? null });
+      // Batch path: collect all sibling calls in this tick and execute one query.
+      // Pagination args are part of the loader key so siblings sharing identical
+      // args batch together; per-parent limit/offset is applied inside the batch
+      // via a window function rather than bailing to a per-parent query (N+1).
+      const argsKey = JSON.stringify({
+        where: whereArg ?? null,
+        orderBy: orderByArg ?? null,
+        limit: limit ?? null,
+        offset: offset ?? null,
+      });
       const loaderKey = `${tableName}::${relationName}::${argsKey}`;
 
       const loader = getOrCreateLoader(context, loaderKey, async (parentIds: readonly any[]) => {
@@ -298,13 +348,28 @@ export const createRelationResolverFactory =
           whereArg ? extractFilters(targetTable, targetTableName, whereArg) : undefined,
         );
 
-        // Use plain db.select() so column refs are never aliased — avoids drizzle-orm v1
-        // RQB aliasing requirements that would require referencing via aliasedTable proxy.
-        let q = db.select().from(targetTable).where(whereCondition) as any;
-        if (orderByArg) {
-          q = q.orderBy(...extractOrderBy(targetTable, orderByArg));
+        let rows: any[];
+        if (limit != null || offset != null) {
+          // Per-parent pagination across the whole batch in one query.
+          rows = await batchedPaginatedRelationQuery(
+            db,
+            targetTable,
+            foreignCol,
+            whereCondition,
+            orderByArg,
+            limit ?? null,
+            offset ?? null,
+            targetPkNames,
+          );
+        } else {
+          // Use plain db.select() so column refs are never aliased — avoids drizzle-orm v1
+          // RQB aliasing requirements that would require referencing via aliasedTable proxy.
+          let q = db.select().from(targetTable).where(whereCondition) as any;
+          if (orderByArg) {
+            q = q.orderBy(...extractOrderBy(targetTable, orderByArg));
+          }
+          rows = await q;
         }
-        const rows: any[] = await q;
 
         // Group by FK value before remapping (remapping may delete null fields).
         if (isOne) {
@@ -1136,7 +1201,8 @@ const extractRelationsParamsInner = (
 
   const args: Record<string, Partial<ProcessedTableSelectArgs>> = {};
 
-  for (const [relName, { targetTableName }] of Object.entries(relationsForTable)) {
+  for (const [relName, relEntry] of Object.entries(relationsForTable)) {
+    const { targetTableName, targetPkNames } = relEntry;
     // The relation field resolves to the target table's own type, e.g. "Posts" not "UsersPostsRelation".
     const relTypeName = resolveTypeName(targetTableName, typeNameMapper);
     // Look up by field name OR by alias (when the caller uses an alias for the relation).
@@ -1174,9 +1240,17 @@ const extractRelationsParamsInner = (
     thisRecord.where = relWhere
       ? { RAW: (aliasedTable: Table) => extractFilters(aliasedTable, relName, relWhere) }
       : undefined;
+    // When a relation is paginated (limit/offset) but unordered, default to the target's
+    // primary key so the per-parent slice is deterministic. Drizzle's RQB calls orderBy
+    // with the aliased table proxy, so resolve the PK columns from it. targetPkNames is
+    // resolved at build time and includes composite keys.
+    const hasPagination = offset != null || limit != null;
+    const pkNames = targetPkNames ?? [];
     thisRecord.orderBy = relationArgs?.orderBy
       ? (aliasedTable: Table) => extractOrderBy(aliasedTable, relationArgs.orderBy!)
-      : undefined;
+      : hasPagination && pkNames.length
+        ? (aliasedTable: Table) => primaryKeyOrderExprs(aliasedTable, pkNames)
+        : undefined;
     thisRecord.offset = offset;
     thisRecord.limit = limit;
 
@@ -1204,4 +1278,378 @@ export const extractRelationsParams = (
   }
 
   return extractRelationsParamsInner(relationMap, tables, tableName, typeName, info, typeNameMapper, true);
+};
+
+/**
+ * Returns a copy of `relationMap` containing only the relations that should be eagerly
+ * pre-fetched (per the `shouldEagerLoad` predicate). Pass the result wherever a query or
+ * mutation resolver builds its `with:` clause; pass the full map to type generation so
+ * opted-out relations still get a (lazily-resolved) field. Relations excluded here are
+ * never added to `with:`, so they don't overfetch — they resolve through their field
+ * resolver instead (or a resolver you override, e.g. via `@graphql-tools/schema`).
+ */
+export const pruneNonEagerRelations = (
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
+  shouldEagerLoad: (tableName: string, relationName: string) => boolean,
+): Record<string, Record<string, TableNamedRelations>> => {
+  const out: Record<string, Record<string, TableNamedRelations>> = {};
+  for (const [tableName, rels] of Object.entries(relationMap)) {
+    out[tableName] = Object.fromEntries(
+      Object.entries(rels).filter(([relationName]) => shouldEagerLoad(tableName, relationName)),
+    );
+  }
+  return out;
+};
+
+/**
+ * Returns the property names of a table's primary key column(s).
+ *
+ * drizzle-orm marks inline `.primaryKey()` columns with `column.primary === true`,
+ * but table-level composite keys (`primaryKey({ columns })`) leave `column.primary`
+ * false on each member — those are only visible via the per-dialect `getTableConfig`.
+ * Dialect builders pass the composite members' DB column names in via
+ * `compositePkColumnNames`; we map them back to property names here.
+ *
+ * Resolution order: inline PK columns → composite PK columns → empty. We deliberately
+ * do NOT guess a column named `id`: if no real primary key is declared, returning empty
+ * lets callers fall back to the batch loader rather than re-keying on a possibly
+ * non-unique column.
+ */
+export const getPrimaryKeyPropNames = (table: Table, compositePkColumnNames?: readonly string[]): string[] => {
+  const cols = getColumns(table);
+  const entries = Object.entries(cols);
+
+  // Inline single `.primaryKey()` columns.
+  const inlinePks = entries.filter(([, c]) => (c as any).primary).map(([k]) => k);
+  if (inlinePks.length) {
+    return inlinePks;
+  }
+
+  // Composite primary key (DB column names supplied by the dialect builder).
+  if (compositePkColumnNames?.length) {
+    const wanted = new Set(compositePkColumnNames);
+    const fromComposite = entries.filter(([, c]) => wanted.has((c as any).name)).map(([k]) => k);
+    if (fromComposite.length) {
+      return fromComposite;
+    }
+  }
+
+  // No declared primary key — let the caller fall back to the batch loader.
+  return [];
+};
+
+/**
+ * Ensures a selected-columns map (SQL format: prop name → Column) includes the table's
+ * primary-key columns. Mutation resolvers pass their RETURNING columns through this so
+ * the eager-loader can re-key rows by PK even when the client didn't select it. Mutates
+ * and returns the same map.
+ */
+export const withPrimaryKeyColumns = <T extends Record<string, any>>(
+  columns: T,
+  table: Table,
+  pkNames: readonly string[],
+): T => {
+  const allCols = getColumns(table);
+  for (const pk of pkNames) {
+    if (!(pk in columns) && allCols[pk]) {
+      (columns as any)[pk] = allCols[pk];
+    }
+  }
+  return columns;
+};
+
+/**
+ * Resolves a table's primary-key property names using a dialect's `getTableConfig` to
+ * surface table-level composite keys (whose member columns aren't flagged `.primary`).
+ * Each dialect builder binds this with its own getTableConfig and reuses the binding for
+ * both relation pagination and mutation re-fetch keying.
+ */
+export const getPrimaryKeyPropNamesFromConfig = (
+  table: Table,
+  getTableConfig: (table: Table) => { primaryKeys: { columns: { name: string }[] }[] },
+): string[] => {
+  const compositePkColumnNames = getTableConfig(table).primaryKeys.flatMap((pk) => pk.columns.map((c) => c.name));
+  return getPrimaryKeyPropNames(table, compositePkColumnNames);
+};
+
+/**
+ * Ascending order expressions for a table's primary key — the deterministic tiebreak for
+ * paginated relations. Shared by the window-function batch path and the eager `with:`
+ * orderBy default so both order identically. `table` may be the aliased RQB proxy.
+ */
+export const primaryKeyOrderExprs = (table: Table, pkNames: readonly string[]): any[] => {
+  const cols = getColumns(table);
+  return pkNames
+    .map((n) => cols[n])
+    .filter(Boolean)
+    .map((col) => asc(col!));
+};
+
+/**
+ * Computes the RETURNING columns and relation selection for a mutation resolver: extracts
+ * the selected scalar columns, determines whether any relations were selected, and only
+ * then forces the primary key into the column set (so the post-mutation eager-load can
+ * re-key rows). Returns everything the resolver needs to decide whether to eager-load.
+ */
+export const prepareMutationRelationColumns = (params: {
+  relationMap: Record<string, Record<string, TableNamedRelations>>;
+  tables: Record<string, Table>;
+  tableName: string;
+  typeName: string;
+  typeNameMapper: TypeNameMapper | undefined;
+  table: Table;
+  pkNames: readonly string[];
+  parsedInfo: ResolveTree;
+}): {
+  columns: Record<string, Column>;
+  hasRelations: boolean;
+  withParams: Record<string, Partial<ProcessedTableSelectArgs>> | undefined;
+} => {
+  const { relationMap, tables, tableName, typeName, typeNameMapper, table, pkNames, parsedInfo } = params;
+  const withParams = relationMap[tableName]
+    ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+    : undefined;
+  const hasRelations = !!(withParams && Object.keys(withParams).length);
+  const baseColumns = extractSelectedColumnsFromTreeSQLFormat(parsedInfo.fieldsByTypeName[typeName]!, table);
+  const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
+  return { columns, hasRelations, withParams };
+};
+
+/** Wraps a thrown Error as a (message-only) GraphQLError; passes non-Errors through unchanged. */
+export const toGraphQLError = (e: unknown): unknown => (e instanceof Error ? new GraphQLError(e.message) : e);
+
+/**
+ * Derives the generated query/mutation field names for a table from the naming config
+ * (typeNameMapper + prefixes/suffixes). Shared by all three dialect builders.
+ */
+export const computeResolverFieldNames = (
+  tableName: string,
+  typeNameMapper: TypeNameMapper | undefined,
+  prefixes: { insert: string; update: string; delete: string },
+  suffixes: { list: string; single: string },
+): {
+  typeName: string;
+  listFieldName: string;
+  singleFieldName: string;
+  createArrayFieldName: string;
+  createSingleFieldName: string;
+  updateFieldName: string;
+  deleteFieldName: string;
+} => {
+  const mapped = typeNameMapper?.(tableName);
+  const typeName = mapped ? capitalize(mapped.singular) : capitalize(tableName);
+  const listFieldName = (mapped?.plural ?? uncapitalize(tableName)) + suffixes.list;
+  const singleFieldName = mapped?.singular ?? uncapitalize(tableName) + suffixes.single;
+  const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(tableName)}`;
+  const createSingleFieldName = mapped
+    ? `${prefixes.insert}${capitalize(mapped.singular)}`
+    : `${prefixes.insert}${capitalize(tableName)}${suffixes.single}`;
+  const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+  const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+  return {
+    typeName,
+    listFieldName,
+    singleFieldName,
+    createArrayFieldName,
+    createSingleFieldName,
+    updateFieldName,
+    deleteFieldName,
+  };
+};
+
+/** GraphQL argument map for a list/array select field. */
+export const selectArrayArgs = (
+  orderArgs: GraphQLInputObjectType,
+  filterArgs: GraphQLInputObjectType,
+): Record<string, { type: any }> => ({
+  offset: { type: GraphQLInt },
+  limit: { type: GraphQLInt },
+  orderBy: { type: orderArgs },
+  where: { type: filterArgs },
+});
+
+/** GraphQL argument map for a single-row select field (no `limit`). */
+export const selectSingleArgs = (
+  orderArgs: GraphQLInputObjectType,
+  filterArgs: GraphQLInputObjectType,
+): Record<string, { type: any }> => ({
+  offset: { type: GraphQLInt },
+  orderBy: { type: orderArgs },
+  where: { type: filterArgs },
+});
+
+/**
+ * Runs the relational-query-builder select shared by every dialect's `generateSelect*`
+ * resolver: selected columns + offset/limit + aliased orderBy/where callbacks + the eager
+ * `with:` relation params, then remaps the result. `single` switches between
+ * findFirst/findMany (and the single path omits `limit`). The PG fallback for tables
+ * without RQB support stays in pg.ts; this covers the common RQB path for all three.
+ */
+export const runRelationalSelect = async (opts: {
+  queryBase: any;
+  tables: Record<string, Table>;
+  tableName: string;
+  table: Table;
+  relationMap: Record<string, Record<string, TableNamedRelations>>;
+  typeName: string;
+  typeNameMapper: TypeNameMapper | undefined;
+  parsedInfo: ResolveTree;
+  offset?: number;
+  limit?: number;
+  orderBy?: any;
+  where?: any;
+  single: boolean;
+}): Promise<any> => {
+  const {
+    queryBase,
+    tables,
+    tableName,
+    table,
+    relationMap,
+    typeName,
+    typeNameMapper,
+    parsedInfo,
+    offset,
+    orderBy,
+    where,
+    single,
+  } = opts;
+  const params: any = {
+    columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
+    offset,
+    // drizzle-orm v1 RQB calls orderBy/where with the aliased table proxy — use it
+    // directly so column refs match the CTE alias.
+    orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
+    where: where ? { RAW: (aliasedTable: Table) => extractFilters(aliasedTable, tableName, where) } : undefined,
+    with: relationMap[tableName]
+      ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+      : undefined,
+  };
+
+  if (single) {
+    const result = await queryBase.findFirst(params);
+    return result ? remapToGraphQLSingleOutput(result, tableName, table, relationMap) : undefined;
+  }
+
+  params.limit = opts.limit;
+  const result = await queryBase.findMany(params);
+  return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
+};
+
+/**
+ * After a mutation, re-fetch the mutated rows through the relational query builder so the
+ * selected relations are eagerly loaded in a single query, then merge those relations onto
+ * the `.returning()` rows — making the per-field BatchLoader fallback unnecessary.
+ *
+ * `withParams` is the pre-computed relation selection (from extractRelationsParams); the
+ * caller only invokes this when relations are actually selected, so it also gates whether
+ * the PK was forced into RETURNING.
+ *
+ * Falls back to the original `.returning()` rows (relations then resolve via the
+ * field-level BatchLoader) when the table has no RQB support, no primary key columns can be
+ * determined, or the re-fetch fails. Supports single- and multi-column primary keys.
+ */
+export const eagerLoadMutationRelations = async (
+  db: any,
+  tableName: string,
+  rows: any[],
+  pkNames: readonly string[],
+  withParams: Record<string, Partial<ProcessedTableSelectArgs>> | undefined,
+): Promise<any[]> => {
+  if (!rows.length || !pkNames.length || !withParams || !Object.keys(withParams).length) {
+    return rows;
+  }
+
+  const queryBase = db.query?.[tableName];
+  if (!queryBase) {
+    return rows;
+  }
+
+  // Only rows that carry every PK value can be re-keyed. Callers force the PK into
+  // RETURNING, but if a value is still missing for some rows, eager-load just those that
+  // are keyable and leave the rest untouched (their relations resolve lazily) rather than
+  // bailing the whole batch.
+  const keyableRows = rows.filter((row) => pkNames.every((n) => row[n] != null));
+  if (!keyableRows.length) {
+    return rows;
+  }
+
+  // Re-fetch ONLY the primary key + relations: the scalar columns are already present
+  // on `rows` from RETURNING, so re-selecting them would transfer them a second time
+  // (and would lose them on the fallback path). We merge the fetched relations back in.
+  const pkColumns: Record<string, true> = {};
+  for (const pk of pkNames) {
+    pkColumns[pk] = true;
+  }
+  const relationNames = Object.keys(withParams);
+
+  // Normalize bigint PK values to strings: JSON.stringify throws on bigint, and a
+  // bigint and its string form never collide within a single column's values.
+  const keyOf = (row: any) =>
+    JSON.stringify(pkNames.map((n) => (typeof row[n] === 'bigint' ? row[n].toString() : row[n])));
+
+  let whereRaw: (aliased: any) => SQL | undefined;
+  if (pkNames.length === 1) {
+    const pkName = pkNames[0]!;
+    const ids = keyableRows.map((r) => r[pkName]);
+    // drizzle-orm v1 RQB calls the where callback with the aliased table proxy;
+    // reference the PK through it so the column ref matches the CTE alias.
+    whereRaw = (aliased: any) => inArray(aliased[pkName], ids);
+  } else {
+    // Composite PK: use a row-value IN — `(a, b) IN ((..), (..))` — so the database can
+    // plan it as a set membership test, instead of an OR of N per-row AND-tuples that
+    // blows up for large bulk mutations.
+    whereRaw = (aliased: any) => {
+      const lhs = sql.join(
+        pkNames.map((n) => sql`${aliased[n]}`),
+        sql`, `,
+      );
+      const tuples = sql.join(
+        keyableRows.map(
+          (row) =>
+            sql`(${sql.join(
+              pkNames.map((n) => sql`${row[n]}`),
+              sql`, `,
+            )})`,
+        ),
+        sql`, `,
+      );
+      return sql`(${lhs}) in (${tuples})`;
+    };
+  }
+
+  let enriched: any[];
+  try {
+    enriched = await queryBase.findMany({
+      columns: pkColumns,
+      where: { RAW: whereRaw },
+      with: withParams,
+    });
+  } catch (err) {
+    // The write has already committed; a re-fetch failure (e.g. an RQB-incompatible
+    // column or relation) must not turn a successful mutation into an error. Fall back
+    // to the raw rows — relations then resolve lazily via the batch loader — but surface
+    // the cause so a genuine misconfiguration isn't silently hidden.
+    console.warn(
+      `[drizzle-graphql] eager-loading relations for a "${tableName}" mutation failed; ` +
+        'falling back to lazy resolution.',
+      err,
+    );
+    return rows;
+  }
+
+  // Merge the fetched relations onto the RETURNING rows in place, preserving order. A row
+  // the re-fetch didn't return (e.g. deleted concurrently) keeps its scalar columns and
+  // its relations resolve lazily, so the result never reports fewer rows than were mutated.
+  const byKey = new Map(enriched.map((e) => [keyOf(e), e]));
+  for (const row of rows) {
+    const match = byKey.get(keyOf(row));
+    if (!match) {
+      continue;
+    }
+    for (const rel of relationNames) {
+      row[rel] = match[rel];
+    }
+  }
+  return rows;
 };

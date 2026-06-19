@@ -121,6 +121,69 @@ describe.sequential('relation field resolvers — eager path (standard schema)',
     expect(user2?.customer?.id).toBe(2);
   });
 
+  it('mutation selecting a relation eager-loads it (no BatchLoader fallback)', async () => {
+    const orig = ctx.pglite.query.bind(ctx.pglite);
+    const seen: string[] = [];
+    (ctx.pglite as any).query = (text: string, ...rest: any[]) => {
+      seen.push(text.replace(/\s+/g, ' '));
+      return orig(text, ...rest);
+    };
+    let result: any;
+    try {
+      result = await ctx.gql.queryGql(`mutation {
+        createPost(values: { id: 9001, authorId: 1, content: "EAGER" }) {
+          id content author { id name }
+        }
+      }`);
+    } finally {
+      (ctx.pglite as any).query = orig;
+    }
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.createPost?.author).toEqual({ id: 1, name: 'FirstUser' });
+
+    // The relation must be eager-loaded via a lateral join on the re-fetch,
+    // NOT via the field-level BatchLoader (which issues a plain
+    // `select ... from "users" where "users"."id" in (...)`).
+    const lateralLoads = seen.filter((q) => /from "posts".*left join lateral.*"users"/i.test(q));
+    const batchLoaderLoads = seen.filter((q) => /from "users" where "users"\."id" in/i.test(q));
+    expect(lateralLoads).toHaveLength(1);
+    expect(batchLoaderLoads).toHaveLength(0);
+  });
+
+  it('mutation selecting a relation but NOT the primary key still resolves the relation', async () => {
+    // The selection omits `id`; the PK must be force-included in RETURNING so the eager
+    // re-fetch can key on it. Before the fix this returned a null/empty relation (the
+    // re-fetch keyed on an undefined PK and matched nothing).
+    const result = await ctx.gql.queryGql(`mutation {
+      createPost(values: { id: 9100, authorId: 1, content: "NOPK" }) {
+        content
+        author { id name }
+      }
+    }`);
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.createPost?.content).toBe('NOPK');
+    expect(result.data?.createPost?.author).toEqual({ id: 1, name: 'FirstUser' });
+  });
+
+  it('bulk insert selecting a relation but NOT the primary key returns every row with its relation', async () => {
+    const result = await ctx.gql.queryGql(`mutation {
+      createPosts(values: [
+        { id: 9201, authorId: 1, content: "A" },
+        { id: 9202, authorId: 5, content: "B" }
+      ]) {
+        content
+        author { id name }
+      }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const posts: any[] = result.data?.createPosts ?? [];
+    // No rows dropped, each mapped to the correct author.
+    expect(posts).toHaveLength(2);
+    expect(posts.find((p) => p.content === 'A')?.author?.name).toBe('FirstUser');
+    expect(posts.find((p) => p.content === 'B')?.author?.id).toBe(5);
+  });
+
   it('relation field args (where) work via the generated schema', async () => {
     const result = await ctx.gql.queryGql(`{
       users { id posts(where: { content: { eq: "1MESSAGE" } }) { id content } }
@@ -129,6 +192,70 @@ describe.sequential('relation field resolvers — eager path (standard schema)',
     const user1 = result.data?.users?.find((u: any) => u.id === 1);
     expect(user1?.posts).toHaveLength(1);
     expect(user1?.posts[0]?.content).toBe('1MESSAGE');
+  });
+
+  it('mutation selecting NO relations does not force the primary key into RETURNING', async () => {
+    const orig = ctx.pglite.query.bind(ctx.pglite);
+    const seen: string[] = [];
+    (ctx.pglite as any).query = (text: string, ...rest: any[]) => {
+      seen.push(text.replace(/\s+/g, ' '));
+      return orig(text, ...rest);
+    };
+    let result: any;
+    try {
+      result = await ctx.gql.queryGql(`mutation {
+        createPost(values: { id: 9300, authorId: 1, content: "NOREL" }) { content }
+      }`);
+    } finally {
+      (ctx.pglite as any).query = orig;
+    }
+    expect(result.errors).toBeUndefined();
+    const insertSql = seen.find((q) => /insert into "posts"/i.test(q))!;
+    const returningClause = insertSql.split(/returning/i)[1] ?? '';
+    // No relations selected → no eager re-fetch → no need to force the PK into RETURNING.
+    expect(returningClause).toMatch(/"content"/);
+    expect(returningClause).not.toMatch(/"id"/);
+  });
+
+  it('eager-loaded null to-one relation resolves to null without a redundant batch query', async () => {
+    const orig = ctx.pglite.query.bind(ctx.pglite);
+    const seen: string[] = [];
+    (ctx.pglite as any).query = (text: string, ...rest: any[]) => {
+      seen.push(text.replace(/\s+/g, ' '));
+      return orig(text, ...rest);
+    };
+    let result: any;
+    try {
+      result = await ctx.gql.queryGql(`{ users { id customer { id } } }`);
+    } finally {
+      (ctx.pglite as any).query = orig;
+    }
+    expect(result.errors).toBeUndefined();
+    // user 5 has no customer — the eager null must be returned directly, not re-queried.
+    expect(result.data?.users?.find((u: any) => u.id === 5)?.customer).toBeNull();
+    const customerBatch = seen.filter((q) => /from "customers" where "customers"\."user_id" in/i.test(q));
+    expect(customerBatch).toHaveLength(0);
+  });
+
+  it('paginated relation without orderBy is deterministic (primary-key ordered)', async () => {
+    // user 1 has posts 1,2,3,6 — limit:2 with no orderBy must deterministically yield
+    // the two lowest primary keys, not an engine-arbitrary pair.
+    const result = await ctx.gql.queryGql(`{
+      users { id posts(limit: 2) { id } }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const user1 = result.data?.users?.find((u: any) => u.id === 1);
+    expect(user1?.posts.map((p: any) => p.id)).toEqual([1, 2]);
+  });
+
+  it('paginated relation with offset but no orderBy pages deterministically by primary key', async () => {
+    const result = await ctx.gql.queryGql(`{
+      users { id posts(offset: 1, limit: 2) { id } }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const user1 = result.data?.users?.find((u: any) => u.id === 1);
+    // posts 1,2,3,6 → offset 1, limit 2 → [2, 3].
+    expect(user1?.posts.map((p: any) => p.id)).toEqual([2, 3]);
   });
 });
 
@@ -191,13 +318,68 @@ describe.sequential('relation field resolvers — lazy path (custom root resolve
     expect(user1?.posts[0]?.content).toBe('1MESSAGE');
   });
 
-  it('relation field limit arg triggers direct query path', async () => {
+  it('relation field limit arg applies per-parent across a batched query', async () => {
+    // user 1 has 4 posts, user 5 has 2 — limit:2 must cap EACH parent at 2,
+    // not the whole result set, and must do so in a single batched query.
+    // With no orderBy the window tiebreaks by primary key, so the slice is
+    // deterministic (the two lowest post ids per parent).
     const result = await lazyGql.queryGql(`{
       users { id posts(limit: 2) { id } }
     }`);
     expect(result.errors).toBeUndefined();
     const user1 = result.data?.users?.find((u: any) => u.id === 1);
-    expect(user1?.posts).toHaveLength(2);
+    const user5 = result.data?.users?.find((u: any) => u.id === 5);
+    expect(user1?.posts.map((p: any) => p.id)).toEqual([1, 2]);
+    expect(user5?.posts.map((p: any) => p.id)).toEqual([4, 5]);
+  });
+
+  it('paginated relation issues a SINGLE batched query (no N+1)', async () => {
+    // Count SELECTs against the posts table issued to the driver during the request.
+    const orig = minCtx.pglite.query.bind(minCtx.pglite);
+    let postSelects = 0;
+    (minCtx.pglite as any).query = (text: string, ...rest: any[]) => {
+      if (/select/i.test(text) && /"posts"/i.test(text)) {
+        postSelects++;
+      }
+      return orig(text, ...rest);
+    };
+    try {
+      const result = await lazyGql.queryGql(`{
+        users { id posts(limit: 2) { id } }
+      }`);
+      expect(result.errors).toBeUndefined();
+    } finally {
+      (minCtx.pglite as any).query = orig;
+    }
+    // Pre-fix this was one query per user (true N+1). Now exactly one for the batch.
+    expect(postSelects).toBe(1);
+  });
+
+  it('relation field offset arg applies per-parent across a batched query', async () => {
+    // Order by id so the window is deterministic. user 1 posts: 1,2,3,6.
+    // offset:1 limit:2 → ids 2,3 for user 1; user 5 posts: 4,5 → offset:1 → id 5.
+    const result = await lazyGql.queryGql(`{
+      users {
+        id
+        posts(orderBy: { id: { priority: 1, direction: asc } }, offset: 1, limit: 2) { id }
+      }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const user1 = result.data?.users?.find((u: any) => u.id === 1);
+    const user5 = result.data?.users?.find((u: any) => u.id === 5);
+    expect(user1?.posts.map((p: any) => p.id)).toEqual([2, 3]);
+    expect(user5?.posts.map((p: any) => p.id)).toEqual([5]);
+  });
+
+  it('limit combined with where applies per-parent in one batched query', async () => {
+    const result = await lazyGql.queryGql(`{
+      users { id posts(where: { content: { eq: "1MESSAGE" } }, limit: 5) { id content } }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const user1 = result.data?.users?.find((u: any) => u.id === 1);
+    const user5 = result.data?.users?.find((u: any) => u.id === 5);
+    expect(user1?.posts).toHaveLength(1);
+    expect(user5?.posts).toHaveLength(1);
   });
 
   it('user with no related records returns empty array for many and null for one', async () => {

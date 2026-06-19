@@ -1,9 +1,10 @@
 import { createServer, type Server } from 'node:http';
+import { addResolversToSchema } from '@graphql-tools/schema';
 import Docker from 'dockerode';
 import { sql } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import getPort from 'get-port';
-import { GraphQLObjectType, GraphQLSchema } from 'graphql';
+import { GraphQLObjectType, GraphQLSchema, graphql } from 'graphql';
 import { createYoga } from 'graphql-yoga';
 import postgres, { type Sql } from 'postgres';
 import { v4 as uuid } from 'uuid';
@@ -2053,5 +2054,36 @@ describe.sequential('Arguments tests', async () => {
         ],
       },
     });
+  });
+});
+
+describe.sequential('eagerLoadRelations override (entities use case)', () => {
+  it('opting a relation out of eager loading lets a graphql-tools resolver override it', async () => {
+    // Build a schema where Users.posts is excluded from the `with:` pre-fetch, then
+    // override its resolver via @graphql-tools/schema — the documented pattern for
+    // overriding a relation without the eager query also fetching it.
+    const { schema: gqlSchema } = buildSchema(ctx.db, {
+      eagerLoadRelations: (table, relation) => !(table === 'Users' && relation === 'posts'),
+    });
+
+    const overridden = addResolversToSchema({
+      schema: gqlSchema,
+      resolvers: {
+        Users: {
+          posts: (parent: any) => [{ id: 999, content: `override-for-${parent.id}` }],
+        },
+      },
+    });
+
+    const result = await graphql({
+      schema: overridden,
+      source: `{ users { id posts { id content } } }`,
+      contextValue: {},
+    });
+
+    expect(result.errors).toBeUndefined();
+    const user1 = (result.data as any)?.users?.find((u: any) => u.id === 1);
+    // The custom resolver's value is returned, not the database posts.
+    expect(user1?.posts).toEqual([{ id: 999, content: 'override-for-1' }]);
   });
 });

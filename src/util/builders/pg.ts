@@ -1,12 +1,11 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
 import { is, One, type Table, type View } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
-import { type PgAsyncDatabase, type PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import { getTableConfig, type PgAsyncDatabase, type PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, ThunkObjMap } from 'graphql';
 import {
   GraphQLError,
   type GraphQLInputObjectType,
-  GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
   type GraphQLObjectType,
@@ -15,20 +14,27 @@ import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { parseResolveInfo } from 'graphql-parse-resolve-info';
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  attachTargetPrimaryKeys,
   buildNamedRelations,
+  computeResolverFieldNames,
   createRelationResolverFactory,
+  eagerLoadMutationRelations,
   extractFilters,
   extractOrderBy,
-  extractRelationsParams,
-  extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  getPrimaryKeyPropNamesFromConfig,
+  prepareMutationRelationColumns,
+  pruneNonEagerRelations,
   type RelationResolverFactory,
+  runRelationalSelect,
+  selectArrayArgs,
+  selectSingleArgs,
   type TablesRelationalConfig,
   type TypeCacheCtx,
   type TypeNameMapper,
+  toGraphQLError,
 } from '../builders/common.ts';
-import { capitalize, uncapitalize } from '../case-ops/index.ts';
 
 import {
   remapFromGraphQLArrayInput,
@@ -54,20 +60,7 @@ const generateSelectArray = (
     | undefined;
   // Tables without relations won't have db.query support — fall back to basic select.
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    limit: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectArrayArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -75,60 +68,46 @@ const generateSelectArray = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, limit, orderBy, where } = args;
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
 
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table);
-
-        let result: any[];
         if (queryBase) {
-          const withParams = relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined;
-
-          result = await queryBase.findMany({
-            columns: selectedColumns,
-            offset,
-            limit,
-            // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
-            // d0, d1) — use it directly so column refs match the CTE alias.
-            orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-            where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
-            with: withParams,
-          });
-        } else {
-          // Fallback for tables without relational query builder support.
-          // Use SQL column objects (not Record<string,true>) so db.select() receives valid expressions.
-          const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-            parsedInfo.fieldsByTypeName[typeName]!,
+          return await runRelationalSelect({
+            queryBase,
+            tables,
+            tableName,
             table,
-          );
-          let q = db.select(selectedColumnsSql).from(table);
-          if (where) {
-            q = q.where(extractFilters(table, tableName, where)) as any;
-          }
-          if (orderBy) {
-            q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
-          }
-          if (offset) {
-            q = q.offset(offset) as any;
-          }
-          if (limit) {
-            q = q.limit(limit) as any;
-          }
-          result = await q;
+            relationMap,
+            typeName,
+            typeNameMapper,
+            parsedInfo,
+            ...args,
+            single: false,
+          });
         }
 
-        return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
+        // Fallback for tables without relational query builder support.
+        // Use SQL column objects (not Record<string,true>) so db.select() receives valid expressions.
+        const { offset, limit, orderBy, where } = args;
+        const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
+          parsedInfo.fieldsByTypeName[typeName]!,
+          table,
+        );
+        let q = db.select(selectedColumnsSql).from(table);
+        if (where) {
+          q = q.where(extractFilters(table, tableName, where)) as any;
+        }
+        if (orderBy) {
+          q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
+        }
+        if (offset) {
+          q = q.offset(offset) as any;
+        }
+        if (limit) {
+          q = q.limit(limit) as any;
+        }
+        return remapToGraphQLArrayOutput(await q, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -151,17 +130,7 @@ const generateSelectSingle = (
     | undefined;
   // Tables without relations won't have db.query support — fall back to basic select.
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectSingleArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -169,71 +138,63 @@ const generateSelectSingle = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, orderBy, where } = args;
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
 
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table);
-
-        let result: any;
         if (queryBase) {
-          result = await queryBase.findFirst({
-            columns: selectedColumns,
-            offset,
-            // drizzle-orm v1 RQB calls orderBy with the aliased table proxy (e.g.
-            // d0, d1) — use it directly so column refs match the CTE alias.
-            orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-            where: where ? { RAW: (aliased) => extractFilters(aliased, tableName, where) } : undefined,
-            with: relationMap[tableName]
-              ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-              : undefined,
-          });
-        } else {
-          // Fallback for tables without relational query builder support.
-          const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-            parsedInfo.fieldsByTypeName[typeName]!,
+          return await runRelationalSelect({
+            queryBase,
+            tables,
+            tableName,
             table,
-          );
-          let q = db.select(selectedColumnsSql).from(table);
-          if (where) {
-            q = q.where(extractFilters(table, tableName, where)) as any;
-          }
-          if (orderBy) {
-            q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
-          }
-          if (offset) {
-            q = q.offset(offset) as any;
-          }
-          const rows = await q.limit(1);
-          result = rows[0];
+            relationMap,
+            typeName,
+            typeNameMapper,
+            parsedInfo,
+            ...args,
+            single: true,
+          });
         }
 
-        if (!result) {
-          return undefined;
+        // Fallback for tables without relational query builder support.
+        const { offset, orderBy, where } = args;
+        const selectedColumnsSql = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
+          parsedInfo.fieldsByTypeName[typeName]!,
+          table,
+        );
+        let q = db.select(selectedColumnsSql).from(table);
+        if (where) {
+          q = q.where(extractFilters(table, tableName, where)) as any;
         }
-
-        return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
+        if (orderBy) {
+          q = q.orderBy(...extractOrderBy(table, orderBy)) as any;
+        }
+        if (offset) {
+          q = q.offset(offset) as any;
+        }
+        const rows = await q.limit(1);
+        const result = rows[0];
+        return result ? remapToGraphQLSingleOutput(result, tableName, table, relationMap) : undefined;
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
   };
 };
 
+/** Primary-key property names for a PG table, including table-level composite keys. */
+const pgPrimaryKeyPropNames = (table: PgTable): string[] => getPrimaryKeyPropNamesFromConfig(table, getTableConfig);
+
 const generateInsertArray = (
   db: PgAsyncDatabase<any, any, any>,
   tableName: string,
   table: PgTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
   conflictDoNothing: boolean = false,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
@@ -241,6 +202,10 @@ const generateInsertArray = (
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(baseType))),
     },
   };
+
+  // Primary-key prop names are constant per table — derive them once at build time
+  // rather than re-running getTableConfig on every mutation request.
+  const pkNames = pgPrimaryKeyPropNames(table);
 
   return {
     name: fieldName,
@@ -255,10 +220,16 @@ const generateInsertArray = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
+          pkNames,
+          parsedInfo,
+        });
 
         let query = db.insert(table).values(input).returning(columns);
         if (conflictDoNothing) {
@@ -266,13 +237,13 @@ const generateInsertArray = (
         }
         const result = await query;
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
-      } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
-        throw e;
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
+      } catch (e) {
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -283,9 +254,12 @@ const generateInsertSingle = (
   db: PgAsyncDatabase<any, any, any>,
   tableName: string,
   table: PgTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
   conflictDoNothing: boolean = false,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
@@ -293,6 +267,9 @@ const generateInsertSingle = (
       type: new GraphQLNonNull(baseType),
     },
   };
+
+  // Derived once at build time — PK prop names don't change per request.
+  const pkNames = pgPrimaryKeyPropNames(table);
 
   return {
     name: fieldName,
@@ -304,10 +281,16 @@ const generateInsertSingle = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
+          pkNames,
+          parsedInfo,
+        });
 
         let query = db.insert(table).values(input).returning(columns);
         if (conflictDoNothing) {
@@ -319,13 +302,13 @@ const generateInsertSingle = (
           return undefined;
         }
 
-        return remapToGraphQLSingleOutput(result[0], tableName, table);
-      } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
-        throw e;
+        return remapToGraphQLSingleOutput(enriched[0], tableName, table, relationMap);
+      } catch (e) {
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -336,10 +319,13 @@ const generateUpdate = (
   db: PgAsyncDatabase<any, any, any>,
   tableName: string,
   table: PgTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   setArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs = {
     set: {
@@ -349,6 +335,9 @@ const generateUpdate = (
       type: filterArgs,
     },
   } as const satisfies GraphQLFieldConfigArgumentMap;
+
+  // Derived once at build time — PK prop names don't change per request.
+  const pkNames = pgPrimaryKeyPropNames(table);
 
   return {
     name: fieldName,
@@ -360,10 +349,16 @@ const generateUpdate = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
+          pkNames,
+          parsedInfo,
+        });
 
         const input = remapFromGraphQLSingleInput(set, table);
         if (!Object.keys(input).length) {
@@ -380,13 +375,13 @@ const generateUpdate = (
 
         const result = await query;
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
-      } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
-        throw e;
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
+      } catch (e) {
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -434,11 +429,7 @@ const generateDelete = (
 
         return remapToGraphQLArrayOutput(result, tableName, table);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -460,6 +451,7 @@ export function generateSchemaData<
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
   conflictDoNothing: boolean = false,
   typeNameMapper?: TypeNameMapper,
+  shouldEagerLoad: (tableName: string, relationName: string) => boolean = () => true,
 ): GeneratedEntities<TDrizzleInstance, TSchema> {
   const schemaEntries = Object.entries(schema);
   const tableEntries = schemaEntries.filter(([_key, value]) => is(value, PgTable)) as [string, PgTable][];
@@ -474,6 +466,14 @@ export function generateSchemaData<
   // Flatten drizzle-orm v1 TablesRelationalConfig into the canonical shape
   // used throughout common.ts: Record<tableName, Record<relName, TableNamedRelations>>
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Record each relation target's primary key (composite-aware) so paginated relations
+  // default to a deterministic PK order. Must run before pruning / type generation, which
+  // share these entry objects.
+  attachTargetPrimaryKeys(namedRelations, tables, pgPrimaryKeyPropNames);
+  // Relations to eager-load via `with:`. Query/mutation resolvers use this pruned map so
+  // opted-out relations never overfetch; type generation keeps the full map so their
+  // fields still exist and resolve lazily.
+  const eagerRelations = pruneNonEagerRelations(namedRelations, shouldEagerLoad);
 
   const resolverFactory: RelationResolverFactory = createRelationResolverFactory(db, tables);
 
@@ -518,22 +518,21 @@ export function generateSchemaData<
     const { selectSingleOutput, selectArrOutput, singleTableItemOutput, arrTableItemOutput } = tableTypes.outputs;
 
     // Compute field names using the mapper logic
-    const mapped = typeNameMapper?.(tableName);
-    const typeName = mapped ? capitalize(mapped.singular) : capitalize(tableName);
-    const listFieldName = (mapped?.plural ?? uncapitalize(tableName)) + suffixes.list;
-    const singleFieldName = mapped?.singular ?? uncapitalize(tableName) + suffixes.single;
-    const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(tableName)}`;
-    const createSingleFieldName = mapped
-      ? `${prefixes.insert}${capitalize(mapped.singular)}`
-      : `${prefixes.insert}${capitalize(tableName)}${suffixes.single}`;
-    const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
-    const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+    const {
+      typeName,
+      listFieldName,
+      singleFieldName,
+      createArrayFieldName,
+      createSingleFieldName,
+      updateFieldName,
+      deleteFieldName,
+    } = computeResolverFieldNames(tableName, typeNameMapper, prefixes, suffixes);
 
     const selectArrGenerated = generateSelectArray(
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       listFieldName,
@@ -544,7 +543,7 @@ export function generateSchemaData<
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       singleFieldName,
@@ -555,28 +554,37 @@ export function generateSchemaData<
       db,
       tableName,
       schema[tableName] as PgTable,
+      tables,
+      eagerRelations,
       insertInput,
       createArrayFieldName,
       typeName,
+      typeNameMapper,
       conflictDoNothing,
     );
     const insertSingleGenerated = generateInsertSingle(
       db,
       tableName,
       schema[tableName] as PgTable,
+      tables,
+      eagerRelations,
       insertInput,
       createSingleFieldName,
       typeName,
+      typeNameMapper,
       conflictDoNothing,
     );
     const updateGenerated = generateUpdate(
       db,
       tableName,
       schema[tableName] as PgTable,
+      tables,
+      eagerRelations,
       updateInput,
       tableFilters,
       updateFieldName,
       typeName,
+      typeNameMapper,
     );
     const deleteGenerated = generateDelete(
       db,

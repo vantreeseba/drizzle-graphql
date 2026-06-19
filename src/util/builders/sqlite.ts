@@ -1,12 +1,11 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
 import { is, One, type Table } from 'drizzle-orm';
 import type { RelationalQueryBuilder } from 'drizzle-orm/mysql-core/query-builders/query';
-import { type BaseSQLiteDatabase, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { type BaseSQLiteDatabase, getTableConfig, type SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, GraphQLResolveInfo, ThunkObjMap } from 'graphql';
 import {
   GraphQLError,
   type GraphQLInputObjectType,
-  GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
   type GraphQLObjectType,
@@ -16,20 +15,26 @@ import { parseResolveInfo } from 'graphql-parse-resolve-info';
 
 import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../types.ts';
 import {
+  attachTargetPrimaryKeys,
   buildNamedRelations,
+  computeResolverFieldNames,
   createRelationResolverFactory,
+  eagerLoadMutationRelations,
   extractFilters,
-  extractOrderBy,
-  extractRelationsParams,
-  extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
+  getPrimaryKeyPropNamesFromConfig,
+  prepareMutationRelationColumns,
+  pruneNonEagerRelations,
   type RelationResolverFactory,
+  runRelationalSelect,
+  selectArrayArgs,
+  selectSingleArgs,
   type TablesRelationalConfig,
   type TypeCacheCtx,
   type TypeNameMapper,
+  toGraphQLError,
 } from '../builders/common.ts';
-import { capitalize, uncapitalize } from '../case-ops/index.ts';
 
 import {
   remapFromGraphQLArrayInput,
@@ -59,20 +64,7 @@ const generateSelectArray = (
     );
   }
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    limit: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectArrayArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -80,34 +72,21 @@ const generateSelectArray = (
     name: fieldName,
     resolver: async (_source: any, args: Partial<TableSelectArgs>, _context: any, info: GraphQLResolveInfo) => {
       try {
-        const { offset, limit, orderBy, where } = args;
-
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const query = queryBase.findMany({
-          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
-          offset,
-          limit,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
-          // use it directly so column refs match the CTE alias.
-          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
-          with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined,
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
+        return await runRelationalSelect({
+          queryBase,
+          tables,
+          tableName,
+          table,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          ...args,
+          single: false,
         });
-
-        const result = await query;
-
-        return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -134,17 +113,7 @@ const generateSelectSingle = (
     );
   }
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectSingleArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -152,55 +121,51 @@ const generateSelectSingle = (
     name: fieldName,
     resolver: async (_source, args: Partial<TableSelectArgs>, _context, info) => {
       try {
-        const { offset, orderBy, where } = args;
-
-        const parsedInfo = parseResolveInfo(info, {
-          deep: true,
-        }) as ResolveTree;
-
-        const query = queryBase.findFirst({
-          columns: extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table),
-          offset,
-          // drizzle-orm v1 RQB calls orderBy with the aliased table proxy —
-          // use it directly so column refs match the CTE alias.
-          orderBy: orderBy ? (aliasedTable: Table) => extractOrderBy(aliasedTable, orderBy) : undefined,
-          where: where ? { RAW: (aliased: Table) => extractFilters(aliased, tableName, where) } : undefined,
-          with: relationMap[tableName]
-            ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-            : undefined,
+        const parsedInfo = parseResolveInfo(info, { deep: true }) as ResolveTree;
+        return await runRelationalSelect({
+          queryBase,
+          tables,
+          tableName,
+          table,
+          relationMap,
+          typeName,
+          typeNameMapper,
+          parsedInfo,
+          ...args,
+          single: true,
         });
-
-        const result = await query;
-        if (!result) {
-          return undefined;
-        }
-
-        return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
   };
 };
 
+/** Primary-key property names for a SQLite table, including table-level composite keys. */
+const sqlitePrimaryKeyPropNames = (table: SQLiteTable): string[] =>
+  getPrimaryKeyPropNamesFromConfig(table, getTableConfig);
+
 const generateInsertArray = (
   db: BaseSQLiteDatabase<any, any, any, any>,
   tableName: string,
   table: SQLiteTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(baseType))),
     },
   };
+
+  // Primary-key prop names are constant per table — derive them once at build time
+  // rather than re-running getTableConfig on every mutation request.
+  const pkNames = sqlitePrimaryKeyPropNames(table);
 
   return {
     name: fieldName,
@@ -215,20 +180,26 @@ const generateInsertArray = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
+          pkNames,
+          parsedInfo,
+        });
 
         const result = await db.insert(table).values(input).returning(columns).onConflictDoNothing();
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
-      } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
-        throw e;
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
+      } catch (e) {
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -239,15 +210,21 @@ const generateInsertSingle = (
   db: BaseSQLiteDatabase<any, any, any, any>,
   tableName: string,
   table: SQLiteTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   baseType: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs: GraphQLFieldConfigArgumentMap = {
     values: {
       type: new GraphQLNonNull(baseType),
     },
   };
+
+  // Derived once at build time — PK prop names don't change per request.
+  const pkNames = sqlitePrimaryKeyPropNames(table);
 
   return {
     name: fieldName,
@@ -259,23 +236,29 @@ const generateInsertSingle = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
+          pkNames,
+          parsedInfo,
+        });
         const result = await db.insert(table).values(input).returning(columns).onConflictDoNothing();
 
         if (!result[0]) {
           return undefined;
         }
 
-        return remapToGraphQLSingleOutput(result[0], tableName, table);
-      } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
-        throw e;
+        return remapToGraphQLSingleOutput(enriched[0], tableName, table, relationMap);
+      } catch (e) {
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -286,10 +269,13 @@ const generateUpdate = (
   db: BaseSQLiteDatabase<any, any, any, any>,
   tableName: string,
   table: SQLiteTable,
+  tables: Record<string, Table>,
+  relationMap: Record<string, Record<string, TableNamedRelations>>,
   setArgs: GraphQLInputObjectType,
   filterArgs: GraphQLInputObjectType,
   fieldName: string,
   typeName: string,
+  typeNameMapper?: TypeNameMapper,
 ): CreatedResolver => {
   const queryArgs = {
     set: {
@@ -299,6 +285,9 @@ const generateUpdate = (
       type: filterArgs,
     },
   } as const satisfies GraphQLFieldConfigArgumentMap;
+
+  // Derived once at build time — PK prop names don't change per request.
+  const pkNames = sqlitePrimaryKeyPropNames(table);
 
   return {
     name: fieldName,
@@ -310,10 +299,16 @@ const generateUpdate = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
+          pkNames,
+          parsedInfo,
+        });
 
         const input = remapFromGraphQLSingleInput(set, table);
         if (!Object.keys(input).length) {
@@ -330,13 +325,13 @@ const generateUpdate = (
 
         const result = await query;
 
-        return remapToGraphQLArrayOutput(result, tableName, table);
-      } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
-        throw e;
+        return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
+      } catch (e) {
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -384,11 +379,7 @@ const generateDelete = (
 
         return remapToGraphQLArrayOutput(result, tableName, table);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -406,6 +397,7 @@ export const generateSchemaData = <
   prefixes: MakeRequired<MakeRequired<BuildSchemaConfig>['prefixes']>,
   suffixes: MakeRequired<MakeRequired<BuildSchemaConfig>['suffixes']>,
   typeNameMapper?: TypeNameMapper,
+  shouldEagerLoad: (tableName: string, relationName: string) => boolean = () => true,
 ): GeneratedEntities<TDrizzleInstance, TSchema> => {
   const rawSchema = schema;
   const schemaEntries = Object.entries(rawSchema);
@@ -421,6 +413,11 @@ export const generateSchemaData = <
 
   // Build namedRelations from the drizzle-orm v1 relations config.
   const namedRelations = buildNamedRelations(relations ?? {}, tableEntries);
+  // Record each relation target's (composite-aware) primary key for deterministic
+  // paginated ordering. Must run before pruning / type generation (shared entry objects).
+  attachTargetPrimaryKeys(namedRelations, tables, sqlitePrimaryKeyPropNames);
+  // Pruned map for query/mutation resolvers' `with:`; type generation keeps the full map.
+  const eagerRelations = pruneNonEagerRelations(namedRelations, shouldEagerLoad);
 
   const resolverFactory: RelationResolverFactory = createRelationResolverFactory(db, tables);
 
@@ -464,22 +461,21 @@ export const generateSchemaData = <
     const { selectSingleOutput, selectArrOutput, singleTableItemOutput, arrTableItemOutput } = tableTypes.outputs;
 
     // Compute field names using the mapper logic
-    const mapped = typeNameMapper?.(tableName);
-    const typeName = mapped ? capitalize(mapped.singular) : capitalize(tableName);
-    const listFieldName = (mapped?.plural ?? uncapitalize(tableName)) + suffixes.list;
-    const singleFieldName = mapped?.singular ?? uncapitalize(tableName) + suffixes.single;
-    const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(tableName)}`;
-    const createSingleFieldName = mapped
-      ? `${prefixes.insert}${capitalize(mapped.singular)}`
-      : `${prefixes.insert}${capitalize(tableName)}${suffixes.single}`;
-    const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
-    const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+    const {
+      typeName,
+      listFieldName,
+      singleFieldName,
+      createArrayFieldName,
+      createSingleFieldName,
+      updateFieldName,
+      deleteFieldName,
+    } = computeResolverFieldNames(tableName, typeNameMapper, prefixes, suffixes);
 
     const selectArrGenerated = generateSelectArray(
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       listFieldName,
@@ -490,7 +486,7 @@ export const generateSchemaData = <
       db,
       tableName,
       tables,
-      namedRelations,
+      eagerRelations,
       tableOrder,
       tableFilters,
       singleFieldName,
@@ -501,26 +497,35 @@ export const generateSchemaData = <
       db,
       tableName,
       schema[tableName] as SQLiteTable,
+      tables,
+      eagerRelations,
       insertInput,
       createArrayFieldName,
       typeName,
+      typeNameMapper,
     );
     const insertSingleGenerated = generateInsertSingle(
       db,
       tableName,
       schema[tableName] as SQLiteTable,
+      tables,
+      eagerRelations,
       insertInput,
       createSingleFieldName,
       typeName,
+      typeNameMapper,
     );
     const updateGenerated = generateUpdate(
       db,
       tableName,
       schema[tableName] as SQLiteTable,
+      tables,
+      eagerRelations,
       updateInput,
       tableFilters,
       updateFieldName,
       typeName,
+      typeNameMapper,
     );
     const deleteGenerated = generateDelete(
       db,

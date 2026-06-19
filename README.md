@@ -84,3 +84,78 @@ Automatically create GraphQL schema or customizable schema config fields from Dr
         console.info('Server is running on http://localhost:4000/graphql')
     })
     ```
+
+## Relations & N+1 handling
+
+Generated schemas resolve nested relations without N+1 query explosions:
+
+-   **Queries** — root queries (`entities.queries.*`) eagerly load every requested
+    relation in a single round-trip using Drizzle's relational query builder
+    (`with:`), including nested relations and per-relation `where` / `orderBy` /
+    `limit` / `offset` arguments.
+-   **Mutations (PostgreSQL & SQLite)** — after an insert or update, if the selection set
+    includes relation fields, the affected rows are re-fetched by primary key through one
+    relational query so their relations are eagerly loaded (single- and composite-column
+    primary keys are supported). `delete` mutations keep using the request-scoped batch
+    loader, since the rows no longer exist to re-fetch. MySQL mutations return only a
+    success flag (no row payload), so this step does not apply there.
+-   **Custom schemas** — each relation field also has a standalone resolver, exported as
+    `entities.fieldResolvers[TableName][relationName]`. When you wire generated types
+    into your own schema and your root resolver does **not** pre-fetch relations, these
+    resolvers batch all sibling loads in a request into a single `IN (…)` query
+    (request-scoped, keyed on the GraphQL `context`), preventing N+1. Per-parent
+    `limit` / `offset` on a to-many relation is applied across the whole batch using a
+    `ROW_NUMBER() OVER (PARTITION BY …)` window function — still one query, not one per
+    parent.
+
+    ```Typescript
+    // entities.fieldResolvers is keyed by table name, then relation name
+    const usersPostsResolver = entities.fieldResolvers.Users.posts
+    ```
+
+> [!IMPORTANT]
+> Per-parent paginated relations (a to-many relation field with `limit` or `offset`)
+> rely on SQL window functions. These require **PostgreSQL**, **MySQL 8.0+**, or
+> **SQLite 3.25+**. Relations without pagination, and all other query/mutation paths,
+> have no such requirement.
+
+### Overriding a relation's resolver without overfetching
+
+By default the eager `with:` pre-fetch is driven purely by the GraphQL selection set:
+any selected relation is fetched from the database, even if you intend to resolve it
+yourself (from a cache, another service, a dataloader, …). To override a relation's
+resolver, first opt it out of eager loading with `eagerLoadRelations` so the parent
+query stops fetching it, then supply your resolver with the standard
+[`@graphql-tools/schema`](https://the-guild.dev/graphql/tools) utilities:
+
+```Typescript
+import { addResolversToSchema } from '@graphql-tools/schema'
+
+const { schema } = buildSchema(db, {
+    // Exclude Users.posts from the parent query's `with:` clause.
+    // Other relations keep eager-loading as usual.
+    eagerLoadRelations: (table, relation) => !(table === 'Users' && relation === 'posts'),
+})
+
+const finalSchema = addResolversToSchema({
+    schema,
+    resolvers: {
+        Users: {
+            posts: (parent, args, context) => context.postsLoader.load(parent.id),
+        },
+    },
+})
+```
+
+`eagerLoadRelations` accepts:
+
+-   `true` (default) — eager-load every relation.
+-   `false` — never eager-load; every relation resolves lazily through its
+    (request-batched) field resolver.
+-   `(tableName, relationName) => boolean` — decide per relation. Returning `false`
+    excludes that relation from `with:` (and from the mutation eager re-fetch).
+
+Opting a relation out does **not** remove its field — it keeps resolving lazily via the
+request-scoped batch loader, so the field still works even before you override it. Table
+and relation names are the Drizzle schema keys (e.g. `Users`, `posts`), matching the keys
+of `entities.fieldResolvers`.
