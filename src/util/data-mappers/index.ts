@@ -1,5 +1,5 @@
 // @ts-nocheck — vendored file, drizzle-orm 1.0 type compat not guaranteed
-import { type Column, getTableColumns, type Table } from 'drizzle-orm';
+import { type Column, getTableColumns, is, One, type Table } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { TableNamedRelations } from '../builders/index.ts';
 
@@ -83,11 +83,13 @@ export const remapToGraphQLSingleOutput = (
 ) => {
   for (const [key, value] of Object.entries(queryOutput)) {
     if (value === undefined || value === null) {
-      // Preserve an explicitly-null relation field (a to-one relation that was
-      // eager-loaded with no related row) as null, so the relation's field resolver
-      // returns null directly instead of re-querying it through the batch loader.
-      // Scalar null/undefined columns are still dropped.
-      if (value === null && relationMap?.[tableName]?.[key]) {
+      // Preserve an explicitly-null TO-ONE relation field (eager-loaded with no related
+      // row) as null, so the relation's field resolver returns null directly instead of
+      // re-querying it through the batch loader. Only to-one relations are nullable; a
+      // to-many relation is a non-null list, so a null there must fall through to deletion
+      // (the field resolver then resolves it to []) rather than be emitted as null.
+      const relEntry = value === null ? relationMap?.[tableName]?.[key] : undefined;
+      if (relEntry && is(relEntry.relation, One)) {
         queryOutput[key] = null;
         continue;
       }
