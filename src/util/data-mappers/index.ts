@@ -83,6 +83,14 @@ export const remapToGraphQLSingleOutput = (
 ) => {
   for (const [key, value] of Object.entries(queryOutput)) {
     if (value === undefined || value === null) {
+      // Preserve an explicitly-null relation field (a to-one relation that was
+      // eager-loaded with no related row) as null, so the relation's field resolver
+      // returns null directly instead of re-querying it through the batch loader.
+      // Scalar null/undefined columns are still dropped.
+      if (value === null && relationMap?.[tableName]?.[key]) {
+        queryOutput[key] = null;
+        continue;
+      }
       delete queryOutput[key];
       continue;
     }

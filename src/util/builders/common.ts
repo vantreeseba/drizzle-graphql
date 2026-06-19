@@ -1364,37 +1364,26 @@ export const withPrimaryKeyColumns = <T extends Record<string, any>>(
 };
 
 /**
- * After a mutation, if the GraphQL selection includes relation fields, re-fetch the
- * mutated rows through the relational query builder so relations are eagerly loaded
- * in a single query — making the per-field BatchLoader fallback unnecessary for
- * mutation results.
+ * After a mutation, re-fetch the mutated rows through the relational query builder so the
+ * selected relations are eagerly loaded in a single query, then merge those relations onto
+ * the `.returning()` rows — making the per-field BatchLoader fallback unnecessary.
+ *
+ * `withParams` is the pre-computed relation selection (from extractRelationsParams); the
+ * caller only invokes this when relations are actually selected, so it also gates whether
+ * the PK was forced into RETURNING.
  *
  * Falls back to the original `.returning()` rows (relations then resolve via the
- * field-level BatchLoader) when no relations are selected, when the table has no RQB
- * support, or when no primary key columns can be determined.
- *
- * Supports single- and multi-column primary keys.
+ * field-level BatchLoader) when the table has no RQB support, no primary key columns can be
+ * determined, or the re-fetch fails. Supports single- and multi-column primary keys.
  */
 export const eagerLoadMutationRelations = async (
   db: any,
   tableName: string,
-  tables: Record<string, Table>,
-  relationMap: Record<string, Record<string, TableNamedRelations>>,
-  typeName: string,
-  typeNameMapper: TypeNameMapper | undefined,
-  parsedInfo: ResolveTree,
   rows: any[],
-  pkNames: string[],
+  pkNames: readonly string[],
+  withParams: Record<string, Partial<ProcessedTableSelectArgs>> | undefined,
 ): Promise<any[]> => {
-  if (!rows.length || !pkNames.length) {
-    return rows;
-  }
-
-  const withParams = relationMap[tableName]
-    ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-    : undefined;
-  // No relations requested — nothing to eager-load.
-  if (!withParams || !Object.keys(withParams).length) {
+  if (!rows.length || !pkNames.length || !withParams || !Object.keys(withParams).length) {
     return rows;
   }
 
@@ -1463,10 +1452,16 @@ export const eagerLoadMutationRelations = async (
       where: { RAW: whereRaw },
       with: withParams,
     });
-  } catch {
+  } catch (err) {
     // The write has already committed; a re-fetch failure (e.g. an RQB-incompatible
     // column or relation) must not turn a successful mutation into an error. Fall back
-    // to the raw rows — relations then resolve lazily via the batch loader.
+    // to the raw rows — relations then resolve lazily via the batch loader — but surface
+    // the cause so a genuine misconfiguration isn't silently hidden.
+    console.warn(
+      `[drizzle-graphql] eager-loading relations for a "${tableName}" mutation failed; ` +
+        'falling back to lazy resolution.',
+      err,
+    );
     return rows;
   }
 

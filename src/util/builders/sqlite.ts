@@ -235,25 +235,22 @@ const generateInsertArray = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = withPrimaryKeyColumns(
-          extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
+        const withParams = relationMap[tableName]
+          ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+          : undefined;
+        const hasRelations = !!(withParams && Object.keys(withParams).length);
+
+        const baseColumns = extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(
+          parsedInfo.fieldsByTypeName[typeName]!,
           table,
-          pkNames,
         );
+        const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
 
         const result = await db.insert(table).values(input).returning(columns).onConflictDoNothing();
 
-        const enriched = await eagerLoadMutationRelations(
-          db,
-          tableName,
-          tables,
-          relationMap,
-          typeName,
-          typeNameMapper,
-          parsedInfo,
-          result,
-          pkNames,
-        );
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
         return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {
@@ -298,28 +295,25 @@ const generateInsertSingle = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = withPrimaryKeyColumns(
-          extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
+        const withParams = relationMap[tableName]
+          ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+          : undefined;
+        const hasRelations = !!(withParams && Object.keys(withParams).length);
+
+        const baseColumns = extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(
+          parsedInfo.fieldsByTypeName[typeName]!,
           table,
-          pkNames,
         );
+        const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
         const result = await db.insert(table).values(input).returning(columns).onConflictDoNothing();
 
         if (!result[0]) {
           return undefined;
         }
 
-        const enriched = await eagerLoadMutationRelations(
-          db,
-          tableName,
-          tables,
-          relationMap,
-          typeName,
-          typeNameMapper,
-          parsedInfo,
-          result,
-          pkNames,
-        );
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
         return remapToGraphQLSingleOutput(enriched[0], tableName, table, relationMap);
       } catch (e) {
@@ -368,11 +362,16 @@ const generateUpdate = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = withPrimaryKeyColumns(
-          extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
+        const withParams = relationMap[tableName]
+          ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+          : undefined;
+        const hasRelations = !!(withParams && Object.keys(withParams).length);
+
+        const baseColumns = extractSelectedColumnsFromTreeSQLFormat<SQLiteColumn>(
+          parsedInfo.fieldsByTypeName[typeName]!,
           table,
-          pkNames,
         );
+        const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
 
         const input = remapFromGraphQLSingleInput(set, table);
         if (!Object.keys(input).length) {
@@ -389,17 +388,9 @@ const generateUpdate = (
 
         const result = await query;
 
-        const enriched = await eagerLoadMutationRelations(
-          db,
-          tableName,
-          tables,
-          relationMap,
-          typeName,
-          typeNameMapper,
-          parsedInfo,
-          result,
-          pkNames,
-        );
+        const enriched = hasRelations
+          ? await eagerLoadMutationRelations(db, tableName, result, pkNames, withParams)
+          : result;
 
         return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {

@@ -194,6 +194,49 @@ describe.sequential('relation field resolvers — eager path (standard schema)',
     expect(user1?.posts[0]?.content).toBe('1MESSAGE');
   });
 
+  it('mutation selecting NO relations does not force the primary key into RETURNING', async () => {
+    const orig = ctx.pglite.query.bind(ctx.pglite);
+    const seen: string[] = [];
+    (ctx.pglite as any).query = (text: string, ...rest: any[]) => {
+      seen.push(text.replace(/\s+/g, ' '));
+      return orig(text, ...rest);
+    };
+    let result: any;
+    try {
+      result = await ctx.gql.queryGql(`mutation {
+        createPost(values: { id: 9300, authorId: 1, content: "NOREL" }) { content }
+      }`);
+    } finally {
+      (ctx.pglite as any).query = orig;
+    }
+    expect(result.errors).toBeUndefined();
+    const insertSql = seen.find((q) => /insert into "posts"/i.test(q))!;
+    const returningClause = insertSql.split(/returning/i)[1] ?? '';
+    // No relations selected → no eager re-fetch → no need to force the PK into RETURNING.
+    expect(returningClause).toMatch(/"content"/);
+    expect(returningClause).not.toMatch(/"id"/);
+  });
+
+  it('eager-loaded null to-one relation resolves to null without a redundant batch query', async () => {
+    const orig = ctx.pglite.query.bind(ctx.pglite);
+    const seen: string[] = [];
+    (ctx.pglite as any).query = (text: string, ...rest: any[]) => {
+      seen.push(text.replace(/\s+/g, ' '));
+      return orig(text, ...rest);
+    };
+    let result: any;
+    try {
+      result = await ctx.gql.queryGql(`{ users { id customer { id } } }`);
+    } finally {
+      (ctx.pglite as any).query = orig;
+    }
+    expect(result.errors).toBeUndefined();
+    // user 5 has no customer — the eager null must be returned directly, not re-queried.
+    expect(result.data?.users?.find((u: any) => u.id === 5)?.customer).toBeNull();
+    const customerBatch = seen.filter((q) => /from "customers" where "customers"\."user_id" in/i.test(q));
+    expect(customerBatch).toHaveLength(0);
+  });
+
   it('paginated relation without orderBy is deterministic (primary-key ordered)', async () => {
     // user 1 has posts 1,2,3,6 — limit:2 with no orderBy must deterministically yield
     // the two lowest primary keys, not an engine-arbitrary pair.
