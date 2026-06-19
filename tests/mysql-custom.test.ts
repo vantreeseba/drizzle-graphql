@@ -3,7 +3,7 @@ import Docker from 'dockerode';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2';
 import getPort from 'get-port';
-import { GraphQLObjectType, GraphQLSchema } from 'graphql';
+import { GraphQLList, GraphQLNonNull, GraphQLObjectType, GraphQLSchema, graphql } from 'graphql';
 import { createYoga } from 'graphql-yoga';
 import * as mysql from 'mysql2/promise';
 import { v4 as uuid } from 'uuid';
@@ -126,7 +126,7 @@ beforeAll(async (_t) => {
   });
   const server = createServer(yoga);
 
-  const port = 5001;
+  const port = 5002;
   server.listen(port);
   const gql = new GraphQLClient(`http://localhost:${port}/graphql`);
 
@@ -2008,5 +2008,58 @@ describe.sequential('Arguments tests', async () => {
         ],
       },
     });
+  });
+});
+
+describe.sequential('Window-function relation pagination (lazy fieldResolvers path)', () => {
+  // The standalone fieldResolvers batch loader applies per-parent limit/offset via a
+  // `ROW_NUMBER() OVER (PARTITION BY ...)` window function — exercised here on real
+  // MySQL 8 to confirm the engine accepts the generated SQL. A custom root resolver
+  // returns bare rows so the relation resolves lazily (no `with:` pre-fetch).
+  const allTypes = () => ctx.entities.types as Record<string, GraphQLObjectType>;
+  const lazySchema = () => {
+    const UsersType = allTypes()['User'] ?? allTypes()['Users'];
+    return new GraphQLSchema({
+      query: new GraphQLObjectType({
+        name: 'Query',
+        fields: {
+          users: {
+            type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(UsersType!))) as any,
+            resolve: () => ctx.db.select().from(schema.Users),
+          },
+        },
+      }),
+    });
+  };
+
+  it('applies per-parent limit across a batched query', async () => {
+    // user 1 has 4 posts, user 5 has 2 — limit:2 must cap EACH parent at 2.
+    const result = await graphql({
+      schema: lazySchema(),
+      source: `{ users { id posts(limit: 2) { id } } }`,
+      contextValue: {},
+    });
+    expect(result.errors).toBeUndefined();
+    const users: any[] = (result.data as any)?.users ?? [];
+    expect(users.find((u) => u.id === 1)?.posts).toHaveLength(2);
+    expect(users.find((u) => u.id === 5)?.posts).toHaveLength(2);
+  });
+
+  it('applies per-parent offset+limit deterministically with orderBy', async () => {
+    // user 1 posts ids 1,2,3,6 → offset 1 limit 2 → [2,3]; user 5 posts 4,5 → [5].
+    const result = await graphql({
+      schema: lazySchema(),
+      source: `{
+        users {
+          id
+          posts(orderBy: { id: { priority: 1, direction: asc } }, offset: 1, limit: 2) { id }
+        }
+      }`,
+      contextValue: {},
+    });
+    expect(result.errors).toBeUndefined();
+    const users: any[] = (result.data as any)?.users ?? [];
+    expect(users.find((u) => u.id === 1)?.posts.map((p: any) => p.id)).toEqual([2, 3]);
+    expect(users.find((u) => u.id === 5)?.posts.map((p: any) => p.id)).toEqual([5]);
   });
 });

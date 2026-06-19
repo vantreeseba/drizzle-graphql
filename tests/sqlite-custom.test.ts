@@ -93,7 +93,7 @@ beforeAll(async () => {
   });
   const server = createServer(yoga);
 
-  const port = 5001;
+  const port = 5003;
   server.listen(port);
   const gql = new GraphQLClient(`http://localhost:${port}/graphql`);
 
