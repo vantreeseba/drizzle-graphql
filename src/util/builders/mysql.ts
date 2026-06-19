@@ -25,7 +25,7 @@ import {
   extractRelationsParams,
   extractSelectedColumnsFromTree,
   generateTableTypes,
-  getPrimaryKeyPropNames,
+  getPrimaryKeyPropNamesFromConfig,
   pruneNonEagerRelations,
   type RelationResolverFactory,
   type TablesRelationalConfig,
@@ -352,12 +352,8 @@ const generateDelete = (
 };
 
 /** Primary-key property names for a MySQL table, including table-level composite keys. */
-const mysqlPrimaryKeyPropNames = (table: MySqlTable): string[] => {
-  const compositePkColumnNames = getTableConfig(table).primaryKeys.flatMap((pk: any) =>
-    pk.columns.map((c: any) => c.name),
-  );
-  return getPrimaryKeyPropNames(table, compositePkColumnNames);
-};
+const mysqlPrimaryKeyPropNames = (table: MySqlTable): string[] =>
+  getPrimaryKeyPropNamesFromConfig(table, getTableConfig);
 
 export const generateSchemaData = <
   TDrizzleInstance extends MySqlDatabase<any, any, any, any>,

@@ -25,13 +25,13 @@ import {
   extractSelectedColumnsFromTree,
   extractSelectedColumnsFromTreeSQLFormat,
   generateTableTypes,
-  getPrimaryKeyPropNames,
+  getPrimaryKeyPropNamesFromConfig,
+  prepareMutationRelationColumns,
   pruneNonEagerRelations,
   type RelationResolverFactory,
   type TablesRelationalConfig,
   type TypeCacheCtx,
   type TypeNameMapper,
-  withPrimaryKeyColumns,
 } from '../builders/common.ts';
 import { capitalize, uncapitalize } from '../case-ops/index.ts';
 
@@ -233,12 +233,7 @@ const generateSelectSingle = (
 };
 
 /** Primary-key property names for a PG table, including table-level composite keys. */
-const pgPrimaryKeyPropNames = (table: PgTable): string[] => {
-  const compositePkColumnNames = getTableConfig(table).primaryKeys.flatMap((pk: any) =>
-    pk.columns.map((c: any) => c.name),
-  );
-  return getPrimaryKeyPropNames(table, compositePkColumnNames);
-};
+const pgPrimaryKeyPropNames = (table: PgTable): string[] => getPrimaryKeyPropNamesFromConfig(table, getTableConfig);
 
 const generateInsertArray = (
   db: PgAsyncDatabase<any, any, any>,
@@ -275,18 +270,16 @@ const generateInsertArray = (
           deep: true,
         }) as ResolveTree;
 
-        // Resolve the relation selection once: it gates whether we force the PK into
-        // RETURNING and whether a relation re-fetch is needed at all.
-        const withParams = relationMap[tableName]
-          ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-          : undefined;
-        const hasRelations = !!(withParams && Object.keys(withParams).length);
-
-        const baseColumns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
-        const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
+          pkNames,
+          parsedInfo,
+        });
 
         let query = db.insert(table).values(input).returning(columns);
         if (conflictDoNothing) {
@@ -342,16 +335,16 @@ const generateInsertSingle = (
           deep: true,
         }) as ResolveTree;
 
-        const withParams = relationMap[tableName]
-          ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-          : undefined;
-        const hasRelations = !!(withParams && Object.keys(withParams).length);
-
-        const baseColumns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
-        const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
+          pkNames,
+          parsedInfo,
+        });
 
         let query = db.insert(table).values(input).returning(columns);
         if (conflictDoNothing) {
@@ -414,16 +407,16 @@ const generateUpdate = (
           deep: true,
         }) as ResolveTree;
 
-        const withParams = relationMap[tableName]
-          ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
-          : undefined;
-        const hasRelations = !!(withParams && Object.keys(withParams).length);
-
-        const baseColumns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const { columns, hasRelations, withParams } = prepareMutationRelationColumns({
+          relationMap,
+          tables,
+          tableName,
+          typeName,
+          typeNameMapper,
           table,
-        );
-        const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
+          pkNames,
+          parsedInfo,
+        });
 
         const input = remapFromGraphQLSingleInput(set, table);
         if (!Object.keys(input).length) {

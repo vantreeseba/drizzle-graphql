@@ -252,37 +252,38 @@ const batchedPaginatedRelationQuery = async (
   // Always tiebreak the window by the target's primary key so per-parent limit/offset
   // slices are deterministic even when the client supplies no (or a non-unique) orderBy.
   // pkNames is resolved at build time and includes composite keys.
-  const pkOrderExprs = pkNames
-    .map((n) => cols[n])
-    .filter(Boolean)
-    .map((col) => asc(col!));
-  const orderExprs = [...(orderByArg ? extractOrderBy(targetTable, orderByArg) : []), ...pkOrderExprs];
+  const orderExprs = [
+    ...(orderByArg ? extractOrderBy(targetTable, orderByArg) : []),
+    ...primaryKeyOrderExprs(targetTable, pkNames),
+  ];
   const orderClause = orderExprs.length ? sql` order by ${sql.join(orderExprs, sql`, `)}` : sql``;
-  const rowNumber = sql`row_number() over (partition by ${foreignCol}${orderClause})`.as('__rn');
+  // Namespaced alias so it can't collide with a real column on the target table.
+  const RN = '__drizzle_graphql_rn';
+  const rowNumber = sql`row_number() over (partition by ${foreignCol}${orderClause})`.as(RN);
 
   // Subquery: every target column plus a per-partition row number.
   const sub = db
-    .select({ ...cols, __rn: rowNumber })
+    .select({ ...cols, [RN]: rowNumber })
     .from(targetTable)
     .where(whereCondition)
     .as('__paginated');
 
   // Outer: keep only the rows that fall inside each parent's window.
   const lower = offset ?? 0;
-  const windowConds: any[] = [gt(sub.__rn, lower)];
+  const windowConds: any[] = [gt(sub[RN], lower)];
   if (limit != null) {
-    windowConds.push(lte(sub.__rn, lower + limit));
+    windowConds.push(lte(sub[RN], lower + limit));
   }
 
   const rows: any[] = await db
     .select()
     .from(sub)
     .where(and(...windowConds))
-    .orderBy(sub.__rn);
+    .orderBy(sub[RN]);
 
   // Strip the helper column so it doesn't leak into remapping/output.
   for (const row of rows) {
-    delete row.__rn;
+    delete row[RN];
   }
   return rows;
 };
@@ -1248,13 +1249,7 @@ const extractRelationsParamsInner = (
     thisRecord.orderBy = relationArgs?.orderBy
       ? (aliasedTable: Table) => extractOrderBy(aliasedTable, relationArgs.orderBy!)
       : hasPagination && pkNames.length
-        ? (aliasedTable: Table) => {
-            const aliasedCols = getColumns(aliasedTable);
-            return pkNames
-              .map((n) => aliasedCols[n])
-              .filter(Boolean)
-              .map((col) => asc(col!));
-          }
+        ? (aliasedTable: Table) => primaryKeyOrderExprs(aliasedTable, pkNames)
         : undefined;
     thisRecord.offset = offset;
     thisRecord.limit = limit;
@@ -1361,6 +1356,63 @@ export const withPrimaryKeyColumns = <T extends Record<string, any>>(
     }
   }
   return columns;
+};
+
+/**
+ * Resolves a table's primary-key property names using a dialect's `getTableConfig` to
+ * surface table-level composite keys (whose member columns aren't flagged `.primary`).
+ * Each dialect builder binds this with its own getTableConfig and reuses the binding for
+ * both relation pagination and mutation re-fetch keying.
+ */
+export const getPrimaryKeyPropNamesFromConfig = (
+  table: Table,
+  getTableConfig: (table: Table) => { primaryKeys: { columns: { name: string }[] }[] },
+): string[] => {
+  const compositePkColumnNames = getTableConfig(table).primaryKeys.flatMap((pk) => pk.columns.map((c) => c.name));
+  return getPrimaryKeyPropNames(table, compositePkColumnNames);
+};
+
+/**
+ * Ascending order expressions for a table's primary key — the deterministic tiebreak for
+ * paginated relations. Shared by the window-function batch path and the eager `with:`
+ * orderBy default so both order identically. `table` may be the aliased RQB proxy.
+ */
+export const primaryKeyOrderExprs = (table: Table, pkNames: readonly string[]): any[] => {
+  const cols = getColumns(table);
+  return pkNames
+    .map((n) => cols[n])
+    .filter(Boolean)
+    .map((col) => asc(col!));
+};
+
+/**
+ * Computes the RETURNING columns and relation selection for a mutation resolver: extracts
+ * the selected scalar columns, determines whether any relations were selected, and only
+ * then forces the primary key into the column set (so the post-mutation eager-load can
+ * re-key rows). Returns everything the resolver needs to decide whether to eager-load.
+ */
+export const prepareMutationRelationColumns = (params: {
+  relationMap: Record<string, Record<string, TableNamedRelations>>;
+  tables: Record<string, Table>;
+  tableName: string;
+  typeName: string;
+  typeNameMapper: TypeNameMapper | undefined;
+  table: Table;
+  pkNames: readonly string[];
+  parsedInfo: ResolveTree;
+}): {
+  columns: Record<string, Column>;
+  hasRelations: boolean;
+  withParams: Record<string, Partial<ProcessedTableSelectArgs>> | undefined;
+} => {
+  const { relationMap, tables, tableName, typeName, typeNameMapper, table, pkNames, parsedInfo } = params;
+  const withParams = relationMap[tableName]
+    ? extractRelationsParams(relationMap, tables, tableName, parsedInfo, typeName, typeNameMapper)
+    : undefined;
+  const hasRelations = !!(withParams && Object.keys(withParams).length);
+  const baseColumns = extractSelectedColumnsFromTreeSQLFormat(parsedInfo.fieldsByTypeName[typeName]!, table);
+  const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
+  return { columns, hasRelations, withParams };
 };
 
 /**
