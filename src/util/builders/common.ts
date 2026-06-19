@@ -1277,8 +1277,10 @@ export const pruneNonEagerRelations = (
  * Dialect builders pass the composite members' DB column names in via
  * `compositePkColumnNames`; we map them back to property names here.
  *
- * Resolution order: inline PK columns → composite PK columns → a column literally
- * named `id` → empty (caller falls back to the BatchLoader).
+ * Resolution order: inline PK columns → composite PK columns → empty. We deliberately
+ * do NOT guess a column named `id`: if no real primary key is declared, returning empty
+ * lets callers fall back to the batch loader rather than re-keying on a possibly
+ * non-unique column.
  */
 export const getPrimaryKeyPropNames = (table: Table, compositePkColumnNames?: readonly string[]): string[] => {
   const cols = getColumns(table);
@@ -1299,8 +1301,8 @@ export const getPrimaryKeyPropNames = (table: Table, compositePkColumnNames?: re
     }
   }
 
-  // Last resort: a column conventionally named `id`.
-  return cols.id ? ['id'] : [];
+  // No declared primary key — let the caller fall back to the batch loader.
+  return [];
 };
 
 /**

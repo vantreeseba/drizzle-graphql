@@ -37,12 +37,12 @@ describe('getPrimaryKeyPropNames', () => {
     expect(pgPk(t)).toEqual(['orgId', 'userId']);
   });
 
-  it('falls back to a column named `id` when no primary key is declared', () => {
-    const t = pgTable('id_fallback', { id: integer('id'), name: text('name') });
-    expect(getPrimaryKeyPropNames(t)).toEqual(['id']);
+  it('does NOT guess a column named `id` that is not a declared primary key', () => {
+    const t = pgTable('id_not_pk', { id: integer('id'), name: text('name') });
+    expect(getPrimaryKeyPropNames(t)).toEqual([]);
   });
 
-  it('returns empty when no primary key and no `id` column exist', () => {
+  it('returns empty when no primary key is declared', () => {
     const t = pgTable('no_pk', { name: text('name'), value: integer('value') });
     expect(getPrimaryKeyPropNames(t)).toEqual([]);
   });
