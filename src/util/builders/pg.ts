@@ -30,6 +30,7 @@ import {
   type TablesRelationalConfig,
   type TypeCacheCtx,
   type TypeNameMapper,
+  withPrimaryKeyColumns,
 } from '../builders/common.ts';
 import { capitalize, uncapitalize } from '../case-ops/index.ts';
 
@@ -269,9 +270,11 @@ const generateInsertArray = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const pkNames = pgPrimaryKeyPropNames(table);
+        const columns = withPrimaryKeyColumns(
+          extractSelectedColumnsFromTreeSQLFormat<PgColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
           table,
+          pkNames,
         );
 
         let query = db.insert(table).values(input).returning(columns);
@@ -290,7 +293,7 @@ const generateInsertArray = (
           typeNameMapper,
           parsedInfo,
           result,
-          pgPrimaryKeyPropNames(table),
+          pkNames,
         );
 
         return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
@@ -334,9 +337,11 @@ const generateInsertSingle = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const pkNames = pgPrimaryKeyPropNames(table);
+        const columns = withPrimaryKeyColumns(
+          extractSelectedColumnsFromTreeSQLFormat<PgColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
           table,
+          pkNames,
         );
 
         let query = db.insert(table).values(input).returning(columns);
@@ -359,7 +364,7 @@ const generateInsertSingle = (
           typeNameMapper,
           parsedInfo,
           result,
-          pgPrimaryKeyPropNames(table),
+          pkNames,
         );
 
         return remapToGraphQLSingleOutput(enriched[0], tableName, table, relationMap);
@@ -406,9 +411,11 @@ const generateUpdate = (
           deep: true,
         }) as ResolveTree;
 
-        const columns = extractSelectedColumnsFromTreeSQLFormat<PgColumn>(
-          parsedInfo.fieldsByTypeName[typeName]!,
+        const pkNames = pgPrimaryKeyPropNames(table);
+        const columns = withPrimaryKeyColumns(
+          extractSelectedColumnsFromTreeSQLFormat<PgColumn>(parsedInfo.fieldsByTypeName[typeName]!, table),
           table,
+          pkNames,
         );
 
         const input = remapFromGraphQLSingleInput(set, table);
@@ -436,7 +443,7 @@ const generateUpdate = (
           typeNameMapper,
           parsedInfo,
           result,
-          pgPrimaryKeyPropNames(table),
+          pkNames,
         );
 
         return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);

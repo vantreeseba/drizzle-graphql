@@ -151,6 +151,39 @@ describe.sequential('relation field resolvers — eager path (standard schema)',
     expect(batchLoaderLoads).toHaveLength(0);
   });
 
+  it('mutation selecting a relation but NOT the primary key still resolves the relation', async () => {
+    // The selection omits `id`; the PK must be force-included in RETURNING so the eager
+    // re-fetch can key on it. Before the fix this returned a null/empty relation (the
+    // re-fetch keyed on an undefined PK and matched nothing).
+    const result = await ctx.gql.queryGql(`mutation {
+      createPost(values: { id: 9100, authorId: 1, content: "NOPK" }) {
+        content
+        author { id name }
+      }
+    }`);
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.createPost?.content).toBe('NOPK');
+    expect(result.data?.createPost?.author).toEqual({ id: 1, name: 'FirstUser' });
+  });
+
+  it('bulk insert selecting a relation but NOT the primary key returns every row with its relation', async () => {
+    const result = await ctx.gql.queryGql(`mutation {
+      createPosts(values: [
+        { id: 9201, authorId: 1, content: "A" },
+        { id: 9202, authorId: 5, content: "B" }
+      ]) {
+        content
+        author { id name }
+      }
+    }`);
+    expect(result.errors).toBeUndefined();
+    const posts: any[] = result.data?.createPosts ?? [];
+    // No rows dropped, each mapped to the correct author.
+    expect(posts).toHaveLength(2);
+    expect(posts.find((p) => p.content === 'A')?.author?.name).toBe('FirstUser');
+    expect(posts.find((p) => p.content === 'B')?.author?.id).toBe(5);
+  });
+
   it('relation field args (where) work via the generated schema', async () => {
     const result = await ctx.gql.queryGql(`{
       users { id posts(where: { content: { eq: "1MESSAGE" } }) { id content } }

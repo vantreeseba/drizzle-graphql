@@ -1286,6 +1286,26 @@ export const getPrimaryKeyPropNames = (table: Table, compositePkColumnNames?: re
 };
 
 /**
+ * Ensures a selected-columns map (SQL format: prop name → Column) includes the table's
+ * primary-key columns. Mutation resolvers pass their RETURNING columns through this so
+ * the eager-loader can re-key rows by PK even when the client didn't select it. Mutates
+ * and returns the same map.
+ */
+export const withPrimaryKeyColumns = <T extends Record<string, any>>(
+  columns: T,
+  table: Table,
+  pkNames: readonly string[],
+): T => {
+  const allCols = getColumns(table);
+  for (const pk of pkNames) {
+    if (!(pk in columns) && allCols[pk]) {
+      (columns as any)[pk] = allCols[pk];
+    }
+  }
+  return columns;
+};
+
+/**
  * After a mutation, if the GraphQL selection includes relation fields, re-fetch the
  * mutated rows through the relational query builder so relations are eagerly loaded
  * in a single query — making the per-field BatchLoader fallback unnecessary for
@@ -1326,8 +1346,25 @@ export const eagerLoadMutationRelations = async (
     return rows;
   }
 
+  // Every mutated row must carry its primary-key value so the re-fetch can be keyed
+  // back to it. Callers force the PK into RETURNING, but if a value is still missing
+  // (e.g. a table without a real PK) we can't re-key — fall back to the raw rows and
+  // let relations resolve lazily through the batch loader.
+  if (rows.some((row) => pkNames.some((n) => row[n] == null))) {
+    return rows;
+  }
+
+  // Re-fetch the columns the client selected, plus the PK so enriched rows can be
+  // mapped back to the mutated rows.
   const selectedColumns = extractSelectedColumnsFromTree(parsedInfo.fieldsByTypeName[typeName]!, table);
-  const keyOf = (row: any) => JSON.stringify(pkNames.map((n) => row[n]));
+  for (const pk of pkNames) {
+    selectedColumns[pk] = true;
+  }
+
+  // Normalize bigint PK values to strings: JSON.stringify throws on bigint, and a
+  // bigint and its string form never collide within a single column's values.
+  const keyOf = (row: any) =>
+    JSON.stringify(pkNames.map((n) => (typeof row[n] === 'bigint' ? row[n].toString() : row[n])));
 
   let whereRaw: (aliased: any) => SQL | undefined;
   if (pkNames.length === 1) {
@@ -1341,13 +1378,23 @@ export const eagerLoadMutationRelations = async (
     whereRaw = (aliased: any) => or(...rows.map((row) => and(...pkNames.map((n) => eq(aliased[n], row[n])))));
   }
 
-  const enriched: any[] = await queryBase.findMany({
-    columns: selectedColumns,
-    where: { RAW: whereRaw },
-    with: withParams,
-  });
+  let enriched: any[];
+  try {
+    enriched = await queryBase.findMany({
+      columns: selectedColumns,
+      where: { RAW: whereRaw },
+      with: withParams,
+    });
+  } catch {
+    // The write has already committed; a re-fetch failure (e.g. an RQB-incompatible
+    // column or relation) must not turn a successful mutation into an error. Fall back
+    // to the raw rows — relations then resolve lazily via the batch loader.
+    return rows;
+  }
 
-  // Preserve the mutation's original row order.
+  // Map enriched rows back onto the mutated rows, preserving original order. A row the
+  // re-fetch didn't return (e.g. deleted concurrently) keeps its original value rather
+  // than being dropped, so the result never reports fewer rows than were mutated.
   const byKey = new Map(enriched.map((r) => [keyOf(r), r]));
-  return rows.map((r) => byKey.get(keyOf(r))).filter((r) => r !== undefined);
+  return rows.map((r) => byKey.get(keyOf(r)) ?? r);
 };
