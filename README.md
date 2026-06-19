@@ -93,11 +93,12 @@ Generated schemas resolve nested relations without N+1 query explosions:
     relation in a single round-trip using Drizzle's relational query builder
     (`with:`), including nested relations and per-relation `where` / `orderBy` /
     `limit` / `offset` arguments.
--   **Mutations** — after an insert or update, if the selection set includes relation
-    fields, the affected rows are re-fetched by primary key through one relational
-    query so their relations are eagerly loaded (single- and composite-column primary
-    keys are supported). `delete` mutations keep using the request-scoped batch loader,
-    since the rows no longer exist to re-fetch.
+-   **Mutations (PostgreSQL & SQLite)** — after an insert or update, if the selection set
+    includes relation fields, the affected rows are re-fetched by primary key through one
+    relational query so their relations are eagerly loaded (single- and composite-column
+    primary keys are supported). `delete` mutations keep using the request-scoped batch
+    loader, since the rows no longer exist to re-fetch. MySQL mutations return only a
+    success flag (no row payload), so this step does not apply there.
 -   **Custom schemas** — each relation field also has a standalone resolver, exported as
     `entities.fieldResolvers[TableName][relationName]`. When you wire generated types
     into your own schema and your root resolver does **not** pre-fetch relations, these
