@@ -6,7 +6,6 @@ import type { GraphQLFieldConfig, GraphQLFieldConfigArgumentMap, GraphQLResolveI
 import {
   GraphQLError,
   type GraphQLInputObjectType,
-  GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
   type GraphQLObjectType,
@@ -18,6 +17,7 @@ import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../t
 import {
   attachTargetPrimaryKeys,
   buildNamedRelations,
+  computeResolverFieldNames,
   createRelationResolverFactory,
   eagerLoadMutationRelations,
   extractFilters,
@@ -30,11 +30,13 @@ import {
   prepareMutationRelationColumns,
   pruneNonEagerRelations,
   type RelationResolverFactory,
+  selectArrayArgs,
+  selectSingleArgs,
   type TablesRelationalConfig,
   type TypeCacheCtx,
   type TypeNameMapper,
+  toGraphQLError,
 } from '../builders/common.ts';
-import { capitalize, uncapitalize } from '../case-ops/index.ts';
 
 import {
   remapFromGraphQLArrayInput,
@@ -64,20 +66,7 @@ const generateSelectArray = (
     );
   }
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    limit: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectArrayArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -108,11 +97,7 @@ const generateSelectArray = (
 
         return remapToGraphQLArrayOutput(result, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -139,17 +124,7 @@ const generateSelectSingle = (
     );
   }
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectSingleArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -182,11 +157,7 @@ const generateSelectSingle = (
 
         return remapToGraphQLSingleOutput(result, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -250,11 +221,7 @@ const generateInsertArray = (
 
         return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -313,11 +280,7 @@ const generateInsertSingle = (
 
         return remapToGraphQLSingleOutput(enriched[0], tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -390,11 +353,7 @@ const generateUpdate = (
 
         return remapToGraphQLArrayOutput(enriched, tableName, table, relationMap);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -442,11 +401,7 @@ const generateDelete = (
 
         return remapToGraphQLArrayOutput(result, tableName, table);
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -528,16 +483,15 @@ export const generateSchemaData = <
     const { selectSingleOutput, selectArrOutput, singleTableItemOutput, arrTableItemOutput } = tableTypes.outputs;
 
     // Compute field names using the mapper logic
-    const mapped = typeNameMapper?.(tableName);
-    const typeName = mapped ? capitalize(mapped.singular) : capitalize(tableName);
-    const listFieldName = (mapped?.plural ?? uncapitalize(tableName)) + suffixes.list;
-    const singleFieldName = mapped?.singular ?? uncapitalize(tableName) + suffixes.single;
-    const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(tableName)}`;
-    const createSingleFieldName = mapped
-      ? `${prefixes.insert}${capitalize(mapped.singular)}`
-      : `${prefixes.insert}${capitalize(tableName)}${suffixes.single}`;
-    const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
-    const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+    const {
+      typeName,
+      listFieldName,
+      singleFieldName,
+      createArrayFieldName,
+      createSingleFieldName,
+      updateFieldName,
+      deleteFieldName,
+    } = computeResolverFieldNames(tableName, typeNameMapper, prefixes, suffixes);
 
     const selectArrGenerated = generateSelectArray(
       db,

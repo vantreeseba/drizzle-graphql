@@ -53,7 +53,7 @@ import {
 } from 'graphql';
 import type { ResolveTree } from 'graphql-parse-resolve-info';
 import { getOrCreateLoader } from '../batch-loader/index.ts';
-import { capitalize } from '../case-ops/index.ts';
+import { capitalize, uncapitalize } from '../case-ops/index.ts';
 import { remapFromGraphQLCore, remapToGraphQLArrayOutput } from '../data-mappers/index.ts';
 import { drizzleColumnToGraphQLType } from '../type-converter/index.ts';
 import type {
@@ -1414,6 +1414,69 @@ export const prepareMutationRelationColumns = (params: {
   const columns = hasRelations ? withPrimaryKeyColumns(baseColumns, table, pkNames) : baseColumns;
   return { columns, hasRelations, withParams };
 };
+
+/** Wraps a thrown Error as a (message-only) GraphQLError; passes non-Errors through unchanged. */
+export const toGraphQLError = (e: unknown): unknown => (e instanceof Error ? new GraphQLError(e.message) : e);
+
+/**
+ * Derives the generated query/mutation field names for a table from the naming config
+ * (typeNameMapper + prefixes/suffixes). Shared by all three dialect builders.
+ */
+export const computeResolverFieldNames = (
+  tableName: string,
+  typeNameMapper: TypeNameMapper | undefined,
+  prefixes: { insert: string; update: string; delete: string },
+  suffixes: { list: string; single: string },
+): {
+  typeName: string;
+  listFieldName: string;
+  singleFieldName: string;
+  createArrayFieldName: string;
+  createSingleFieldName: string;
+  updateFieldName: string;
+  deleteFieldName: string;
+} => {
+  const mapped = typeNameMapper?.(tableName);
+  const typeName = mapped ? capitalize(mapped.singular) : capitalize(tableName);
+  const listFieldName = (mapped?.plural ?? uncapitalize(tableName)) + suffixes.list;
+  const singleFieldName = mapped?.singular ?? uncapitalize(tableName) + suffixes.single;
+  const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(tableName)}`;
+  const createSingleFieldName = mapped
+    ? `${prefixes.insert}${capitalize(mapped.singular)}`
+    : `${prefixes.insert}${capitalize(tableName)}${suffixes.single}`;
+  const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+  const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+  return {
+    typeName,
+    listFieldName,
+    singleFieldName,
+    createArrayFieldName,
+    createSingleFieldName,
+    updateFieldName,
+    deleteFieldName,
+  };
+};
+
+/** GraphQL argument map for a list/array select field. */
+export const selectArrayArgs = (
+  orderArgs: GraphQLInputObjectType,
+  filterArgs: GraphQLInputObjectType,
+): Record<string, { type: any }> => ({
+  offset: { type: GraphQLInt },
+  limit: { type: GraphQLInt },
+  orderBy: { type: orderArgs },
+  where: { type: filterArgs },
+});
+
+/** GraphQL argument map for a single-row select field (no `limit`). */
+export const selectSingleArgs = (
+  orderArgs: GraphQLInputObjectType,
+  filterArgs: GraphQLInputObjectType,
+): Record<string, { type: any }> => ({
+  offset: { type: GraphQLInt },
+  orderBy: { type: orderArgs },
+  where: { type: filterArgs },
+});
 
 /**
  * After a mutation, re-fetch the mutated rows through the relational query builder so the

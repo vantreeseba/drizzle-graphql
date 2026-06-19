@@ -7,7 +7,6 @@ import {
   GraphQLBoolean,
   GraphQLError,
   type GraphQLInputObjectType,
-  GraphQLInt,
   GraphQLList,
   GraphQLNonNull,
   GraphQLObjectType,
@@ -19,6 +18,7 @@ import type { BuildSchemaConfig, GeneratedEntities, MakeRequired } from '../../t
 import {
   attachTargetPrimaryKeys,
   buildNamedRelations,
+  computeResolverFieldNames,
   createRelationResolverFactory,
   extractFilters,
   extractOrderBy,
@@ -28,11 +28,13 @@ import {
   getPrimaryKeyPropNamesFromConfig,
   pruneNonEagerRelations,
   type RelationResolverFactory,
+  selectArrayArgs,
+  selectSingleArgs,
   type TablesRelationalConfig,
   type TypeCacheCtx,
   type TypeNameMapper,
+  toGraphQLError,
 } from '../builders/common.ts';
-import { capitalize, uncapitalize } from '../case-ops/index.ts';
 
 import {
   remapFromGraphQLArrayInput,
@@ -62,20 +64,7 @@ const generateSelectArray = (
     );
   }
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    limit: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectArrayArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -137,17 +126,7 @@ const generateSelectSingle = (
     );
   }
 
-  const queryArgs = {
-    offset: {
-      type: GraphQLInt,
-    },
-    orderBy: {
-      type: orderArgs,
-    },
-    where: {
-      type: filterArgs,
-    },
-  } as GraphQLFieldConfigArgumentMap;
+  const queryArgs = selectSingleArgs(orderArgs, filterArgs);
 
   const table = tables[tableName]!;
 
@@ -217,11 +196,7 @@ const generateInsertArray = (
 
         return { isSuccess: true };
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -251,11 +226,7 @@ const generateInsertSingle = (
 
         return { isSuccess: true };
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -300,11 +271,7 @@ const generateUpdate = (
 
         return { isSuccess: true };
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -340,11 +307,7 @@ const generateDelete = (
 
         return { isSuccess: true };
       } catch (e) {
-        if (e instanceof Error) {
-          throw new GraphQLError(e.message);
-        }
-
-        throw e;
+        throw toGraphQLError(e);
       }
     },
     args: queryArgs,
@@ -441,16 +404,15 @@ export const generateSchemaData = <
     const { selectSingleOutput, selectArrOutput } = tableTypes.outputs;
 
     // Compute field names using the mapper logic
-    const mapped = typeNameMapper?.(tableName);
-    const typeName = mapped ? capitalize(mapped.singular) : capitalize(tableName);
-    const listFieldName = (mapped?.plural ?? uncapitalize(tableName)) + suffixes.list;
-    const singleFieldName = mapped?.singular ?? uncapitalize(tableName) + suffixes.single;
-    const createArrayFieldName = `${prefixes.insert}${mapped ? capitalize(mapped.plural) : capitalize(tableName)}`;
-    const createSingleFieldName = mapped
-      ? `${prefixes.insert}${capitalize(mapped.singular)}`
-      : `${prefixes.insert}${capitalize(tableName)}${suffixes.single}`;
-    const updateFieldName = `${prefixes.update}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
-    const deleteFieldName = `${prefixes.delete}${mapped ? capitalize(mapped.singular) : capitalize(tableName)}`;
+    const {
+      typeName,
+      listFieldName,
+      singleFieldName,
+      createArrayFieldName,
+      createSingleFieldName,
+      updateFieldName,
+      deleteFieldName,
+    } = computeResolverFieldNames(tableName, typeNameMapper, prefixes, suffixes);
 
     const selectArrGenerated = generateSelectArray(
       db,
