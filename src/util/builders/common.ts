@@ -218,7 +218,13 @@ const batchedPaginatedRelationQuery = async (
 ): Promise<any[]> => {
   const cols = getColumns(targetTable);
 
-  const orderExprs = orderByArg ? extractOrderBy(targetTable, orderByArg) : [];
+  // Always tiebreak the window by the target's primary key so per-parent limit/offset
+  // slices are deterministic even when the client supplies no (or a non-unique) orderBy.
+  const pkOrderExprs = getPrimaryKeyPropNames(targetTable)
+    .map((n) => cols[n])
+    .filter(Boolean)
+    .map((col) => asc(col!));
+  const orderExprs = [...(orderByArg ? extractOrderBy(targetTable, orderByArg) : []), ...pkOrderExprs];
   const orderClause = orderExprs.length ? sql` order by ${sql.join(orderExprs, sql`, `)}` : sql``;
   const rowNumber = sql`row_number() over (partition by ${foreignCol}${orderClause})`.as('__rn');
 
@@ -1197,9 +1203,21 @@ const extractRelationsParamsInner = (
     thisRecord.where = relWhere
       ? { RAW: (aliasedTable: Table) => extractFilters(aliasedTable, relName, relWhere) }
       : undefined;
+    // When a relation is paginated (limit/offset) but unordered, default to the target's
+    // primary key so the per-parent slice is deterministic. Drizzle's RQB calls orderBy
+    // with the aliased table proxy, so resolve the PK columns from it.
+    const hasPagination = offset != null || limit != null;
     thisRecord.orderBy = relationArgs?.orderBy
       ? (aliasedTable: Table) => extractOrderBy(aliasedTable, relationArgs.orderBy!)
-      : undefined;
+      : hasPagination
+        ? (aliasedTable: Table) => {
+            const aliasedCols = getColumns(aliasedTable);
+            return getPrimaryKeyPropNames(tables[targetTableName]!)
+              .map((n) => aliasedCols[n])
+              .filter(Boolean)
+              .map((col) => asc(col!));
+          }
+        : undefined;
     thisRecord.offset = offset;
     thisRecord.limit = limit;
 
